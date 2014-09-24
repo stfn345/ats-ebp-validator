@@ -1,0 +1,94 @@
+
+
+StartWithSAP = 1
+MaxAudioGap_PTSTicks = 10
+MaxVideoGap_PTSTicks = 100
+SegmentAlignment = 1
+SubsegmentAlignment = 1
+BitstreamSwitching = 1
+InitializationSegment = 
+
+####### COMMENT ################
+
+RepresentationIndexSegment = uf3/uf3_iframe.sidx,uf7/uf7_iframe.sidx,uf12/uf12_iframe.sidx,uf28/uf28_iframe.sidx
+
+Segment.1 = uf3/seg-00001.ts,uf7/seg-00001.ts,uf12/seg-00001.ts,uf28/seg-00001.ts
+Segment.2 = uf3/seg-00002.ts,uf7/seg-00002.ts,uf12/seg-00002.ts,uf28/seg-00002.ts
+Segment.3 = uf3/seg-00003.ts,uf7/seg-00003.ts,uf12/seg-00003.ts,uf28/seg-00003.ts
+Segment.4 = uf3/seg-00004.ts,uf7/seg-00004.ts,uf12/seg-00004.ts,uf28/seg-00004.ts
+Segment.5 = uf3/seg-00005.ts,uf7/seg-00005.ts,uf12/seg-00005.ts,uf28/seg-00005.ts
+Segment.6 = uf3/seg-00006.ts,uf7/seg-00006.ts,uf12/seg-00006.ts,uf28/seg-00006.ts
+Segment.7 = uf3/seg-00007.ts,uf7/seg-00007.ts,uf12/seg-00007.ts,uf28/seg-00007.ts
+Segment.8 = uf3/seg-00008.ts,uf7/seg-00008.ts,uf12/seg-00008.ts,uf28/seg-00008.ts
+Segment.9 = uf3/seg-00009.ts,uf7/seg-00009.ts,uf12/seg-00009.ts,uf28/seg-00009.ts
+Segment.10 = uf3/seg-00010.ts,uf7/seg-00010.ts,uf12/seg-00010.ts,uf28/seg-00010.ts
+Segment.11 = uf3/seg-00011.ts,uf7/seg-00011.ts,uf12/seg-00011.ts,uf28/seg-00011.ts
+Segment.12 = uf3/seg-00012.ts,uf7/seg-00012.ts,uf12/seg-00012.ts,uf28/seg-00012.ts
+Segment.13 = uf3/seg-00013.ts,uf7/seg-00013.ts,uf12/seg-00013.ts,uf28/seg-00013.ts
+Segment.14 = uf3/seg-00014.ts,uf7/seg-00014.ts,uf12/seg-00014.ts,uf28/seg-00014.ts
+Segment.15 = uf3/seg-00015.ts,uf7/seg-00015.ts,uf12/seg-00015.ts,uf28/seg-00015.ts
+Segment.16 = uf3/seg-00016.ts,uf7/seg-00016.ts,uf12/seg-00016.ts,uf28/seg-00016.ts
+Segment.17 = uf3/seg-00017.ts,uf7/seg-00017.ts,uf12/seg-00017.ts,uf28/seg-00017.ts
+Segment.18 = uf3/seg-00018.ts,uf7/seg-00018.ts,uf12/seg-00018.ts,uf28/seg-00018.ts
+Segment.19 = uf3/seg-00019.ts,uf7/seg-00019.ts,uf12/seg-00019.ts,uf28/seg-00019.ts
+Segment.20 = uf3/seg-00020.ts,uf7/seg-00020.ts,uf12/seg-00020.ts,uf28/seg-00020.ts
+Segment.21 = uf3/seg-00021.ts,uf7/seg-00021.ts,uf12/seg-00021.ts,uf28/seg-00021.ts
+Segment.22 = uf3/seg-00022.ts,uf7/seg-00022.ts,uf12/seg-00022.ts,uf28/seg-00022.ts
+Segment.23 = uf3/seg-00023.ts,uf7/seg-00023.ts,uf12/seg-00023.ts,uf28/seg-00023.ts
+Segment.24 = uf3/seg-00024.ts,uf7/seg-00024.ts,uf12/seg-00024.ts,uf28/seg-00024.ts
+Segment.25 = uf3/seg-00025.ts,uf7/seg-00025.ts,uf12/seg-00025.ts,uf28/seg-00025.ts
+Segment.26 = uf3/seg-00026.ts,uf7/seg-00026.ts,uf12/seg-00026.ts,uf28/seg-00026.ts
+
+Segment_DurationPTSTicks.1 = 900000
+Segment_DurationPTSTicks.2 = 900000
+Segment_DurationPTSTicks.3 = 900000
+Segment_DurationPTSTicks.4 = 900000
+Segment_DurationPTSTicks.5 = 900000
+Segment_DurationPTSTicks.6 = 900000
+Segment_DurationPTSTicks.7 = 900000
+Segment_DurationPTSTicks.8 = 900000
+Segment_DurationPTSTicks.9 = 900000
+Segment_DurationPTSTicks.10 = 900000
+Segment_DurationPTSTicks.11 = 900000
+Segment_DurationPTSTicks.12 = 900000
+Segment_DurationPTSTicks.13 = 900000
+Segment_DurationPTSTicks.14 = 900000
+Segment_DurationPTSTicks.15 = 900000
+Segment_DurationPTSTicks.16 = 900000
+Segment_DurationPTSTicks.17 = 900000
+Segment_DurationPTSTicks.18 = 900000
+Segment_DurationPTSTicks.19 = 900000
+Segment_DurationPTSTicks.20 = 900000
+Segment_DurationPTSTicks.21 = 900000
+Segment_DurationPTSTicks.22 = 900000
+Segment_DurationPTSTicks.23 = 900000
+Segment_DurationPTSTicks.24 = 900000
+Segment_DurationPTSTicks.25 = 900000
+Segment_DurationPTSTicks.26 = 647520
+
+Segment_IndexFile.1 = 
+Segment_IndexFile.2 = 
+Segment_IndexFile.3 = 
+Segment_IndexFile.4 = 
+Segment_IndexFile.5 = 
+Segment_IndexFile.6 = 
+Segment_IndexFile.7 = 
+Segment_IndexFile.8 = 
+Segment_IndexFile.9 = 
+Segment_IndexFile.10 = 
+Segment_IndexFile.11 = 
+Segment_IndexFile.12 = 
+Segment_IndexFile.13 = 
+Segment_IndexFile.14 = 
+Segment_IndexFile.15 = 
+Segment_IndexFile.16 = 
+Segment_IndexFile.17 = 
+Segment_IndexFile.18 = 
+Segment_IndexFile.19 = 
+Segment_IndexFile.20 = 
+Segment_IndexFile.21 = 
+Segment_IndexFile.22 = 
+Segment_IndexFile.23 = 
+Segment_IndexFile.24 = 
+Segment_IndexFile.25 = 
+Segment_IndexFile.26 = 
