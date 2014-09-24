@@ -27,3 +27,13 @@
 *.i*86
 *.x86_64
 *.hex
+
+# Autotools files for h264bitstream 
+
+h264bitstream/Makefile.in
+h264bitstream/aclocal.m4
+h264bitstream/autom4te.cache/
+h264bitstream/build-aux/
+h264bitstream/configure
+h264bitstream/m4/
+
