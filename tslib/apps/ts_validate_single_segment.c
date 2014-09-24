@@ -124,11 +124,14 @@ int main(int argc, char *argv[])
    }
 
    ///////////////////////////////////
-   int returnCode = doSegmentValidation(&dash_validator, fname, NULL, NULL /* GORP */, 0 /* GORP: segment duration */);
+
+   /*
+   int returnCode = doSegmentValidation(&dash_validator, fname, NULL, NULL , 0);
    if (returnCode != 0)
    {
        return returnCode;
    }
+   */
 
    fprintf(stdout, "RESULT: %s\n", dash_validator.status ? "PASS" : "FAIL"); 
    

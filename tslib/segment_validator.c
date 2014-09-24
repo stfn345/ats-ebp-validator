@@ -306,6 +306,8 @@ int validate_pes_packet(pes_packet_t *pes, elementary_stream_info_t *esi, vqarra
    pid_validator_t *pid_validator = dash_validator_find_pid(first_ts->header.PID);
    
 //   printf ("processing PES packet: PID = %d\n", first_ts->header.PID);
+
+   /*
    if (first_ts->header.PID == PID_EMSG)
    {
        uint8_t* buf = pes->payload;
@@ -316,6 +318,7 @@ int validate_pes_packet(pes_packet_t *pes, elementary_stream_info_t *esi, vqarra
           g_p_dash_validator->status = 0;
        }
    }
+   */
 
    
    assert(pid_validator != NULL); 
@@ -589,9 +592,11 @@ int doSegmentValidation(dash_validator_t *dash_validator, char *fname, dash_vali
 
 void doDASHEventValidation(uint8_t* buf, int len)
 {
+  /*
     if (validateEmsgMsg(buf, len, g_segmentDuration) != 0)
     {
        LOG_ERROR("DASH Conformance: validation of EMSG failed"); 
        g_p_dash_validator->status = 0;
     }
+    */
 }

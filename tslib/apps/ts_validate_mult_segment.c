@@ -24,7 +24,6 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "log.h"
 
 #include "segment_validator.h"
-#include "ISOBMFF.h"
 
 #define SEGMENT_FILE_NAME_MAX_LENGTH    512
 #define SEGMENT_FILE_NUM_HEADER_LINES    8
@@ -78,6 +77,7 @@ static void usage(char *name)
 
 int main(int argc, char *argv[]) 
 { 
+  /*
     int c, long_options_index; 
     extern char *optarg; 
     extern int optind; 
@@ -206,7 +206,7 @@ int main(int argc, char *argv[])
     {
         for (int repIndex=0; repIndex<numRepresentations; repIndex++)
         {
-            data_segment_iframes_t *pIFramesTemp = pIFrames + getArrayIndex (repIndex, 0 /* segIndex */, numSegments);
+            data_segment_iframes_t *pIFramesTemp = pIFrames + getArrayIndex (repIndex, 0  segIndex , numSegments);
             returnCode = validateIndexSegment(representationIndexFileNames + repIndex*SEGMENT_FILE_NAME_MAX_LENGTH, 
                 numSegments, segDurations, pIFramesTemp);
             if (returnCode != 0)
@@ -360,7 +360,7 @@ int main(int argc, char *argv[])
                    }
                     else if (pv->content_component == AUDIO_CONTENT_COMPONENT)
                     {
-/*                        float numDeltaFrames = (actualStartTime - expectedStartTime[arrayIndex])/1917.0;
+                        float numDeltaFrames = (actualStartTime - expectedStartTime[arrayIndex])/1917.0;
                         if (numDeltaFrames >= 4.0 || numDeltaFrames <= -4.0)
                         {
                             LOG_INFO_ARGS ("%s: Num Audio Frames in Delta (%f) >= 4: FAIL", segFileName, numDeltaFrames);
@@ -370,7 +370,6 @@ int main(int argc, char *argv[])
                         {
                             LOG_INFO_ARGS ("%s: Num Audio Frames in Delta (%f) < 4: OK", segFileName, numDeltaFrames);
                         }
-                        */
                     }
                 }
 
@@ -475,6 +474,7 @@ int main(int argc, char *argv[])
         overallStatus = overallStatus && dash_validator[i].status;
      }
      LOG_INFO_ARGS("\nOVERALL TEST RESULT: %s", (overallStatus == 1)?"PASS":"FAIL");
+     */
 }
 
 int getArrayIndex (int repNum, int segNum, int numSegments)

@@ -1,24 +1,33 @@
 SHELL = /bin/sh
 
-SUBDIRS = tslib libstructures h264bitstream 
+SUBDIRS = tslib libstructures h264bitstream logging
 
-logging:
-	$(MAKE) -C logging
+.PHONY: clean subdirs $(SUBDIRS)
 
-$(SUDIRS): logging
-	$(MAKE) -C $@
-
+all: subdirs
 subdirs: $(SUBDIRS)
 
-subdirs-clean:
-	for dir in $(SUBDIRS) logging; do \
-        echo "Cleaning $$dir..."; \
+logging:
+	$(MAKE) -C $@
+
+h264bitstream:
+	if [ ! -f $@/configure ]; then \
+		cd $@; ./autogen.sh; cd -; \
+	elif [ ! -f $@/Makefile ]; then \
+		cd $@; ./configure; cd -; \
+	fi
+	$(MAKE) -C $@
+
+libstructures: 
+	$(MAKE) -C $@
+
+tslib: libstructures h264bitstream logging
+	$(MAKE) -C $@
+
+clean: 
+	for dir in $(SUBDIRS); do \
+		echo "Cleaning $$dir..."; \
 		$(MAKE) -C $$dir clean; \
 	done
 
-all: subdirs
-default: all
 
-clean: subdirs-clean
-
-.PHONY: subdirs $(SUBDIRS) logging subdirs-clean

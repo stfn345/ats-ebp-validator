@@ -22,8 +22,6 @@ LIBS = -L .
 CFLAGS  += $(INCLUDES)
 LDFLAGS += $(LIBS)
 
-BINARIES = ISOBMFF
-
 all: liblogging.a 
 
 liblogging.a: $(OBJS)
@@ -31,4 +29,4 @@ liblogging.a: $(OBJS)
 	$(RANLIB) $@
 
 clean:
-	rm -f $(OBJS) *.a $(BINARIES) core
+	rm -f $(OBJS) *.a core
