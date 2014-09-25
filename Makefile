@@ -13,7 +13,8 @@ logging:
 h264bitstream:
 	if [ ! -f $@/configure ]; then \
 		cd $@; ./autogen.sh; cd -; \
-	elif [ ! -f $@/Makefile ]; then \
+  fi; \
+	if [ ! -f $@/Makefile ]; then \
 		cd $@; ./configure; cd -; \
 	fi
 	$(MAKE) -C $@
