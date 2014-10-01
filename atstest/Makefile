@@ -10,8 +10,19 @@ LDFLAGS += -g -static
 SRCS = $(wildcard *.c) 
 OBJS = $(SRCS:%.c=%.o)
 
+LOG_LIB_DIR = ../logging
+LOG_LIB = $(LOG_LIB_DIR)/liblogging.a
+
+TSLIB_LIB_DIR = ../tslib
+TSLIB_LIB = $(TSLIB_LIB_DIR)/libtslib.a
+
+STRUCT_LIB_DIR = ../libstructures
+STRUCT_LIB = $(STRUCT_LIB_DIR)/libdatastruct.a
+
+ALL_LIBS = $(LOG_LIB) $(TSLIB_LIB) $(STRUCT_LIB)
+
 INCLUDES = -I . -I../tslib -I../common -I../libstructures/ -I../h264bitstream/ -I../logging/
-LIBS = -L . -L../tslib -ltslib -L../h264bitstream/.libs -lh264bitstream -L../logging/ -llogging   -L../libstructures/ -ldatastruct -lm
+LIBS = -L . -L$(TSLIB_LIB_DIR) -ltslib -L../h264bitstream/.libs -lh264bitstream -L$(LOG_LIB_DIR) -llogging -L$(STRUCT_LIB_DIR) -ldatastruct -lm
 
 CFLAGS  += $(INCLUDES)
 LDFLAGS += $(LIBS)
@@ -20,7 +31,7 @@ BINARIES = test
 
 all: $(BINARIES)
 
-test: main.c
+test: main.c $(ALL_LIBS)
 	$(CC) $(CFLAGS) -o $@ $< $(LIBS)
 
 clean:
