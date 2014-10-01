@@ -78,8 +78,10 @@ struct _mpeg2ts_program_
    pmt_processor_t pmt_processor;   /// callback called after PMT was processed
    void *arg;                       /// argument for PMT callback
    arg_destructor_t arg_destructor; /// destructor for the callback argument
-}; 
 
+   uint32_t scte128_enabled;        /// Determines if SCTE128 private data is available
+                                    /// and should be parsed
+}; 
 
 struct _mpeg2ts_stream_ 
 {
@@ -199,6 +201,12 @@ int mpeg2ts_program_register_pid_processor(mpeg2ts_program_t *m2p, uint32_t PID,
  * @return zero if unregistration succeeded. 
  */
 int mpeg2ts_program_unregister_pid_processor(mpeg2ts_program_t *m2p, uint32_t PID); 
+
+/**
+ * Indicates that SCTE-128 private data is carried in the TS packet adaptation field
+ * and the packet parser should parse it for this program
+ */
+void mpeg2ts_program_enable_scte128(mpeg2ts_program_t *m2p);
 
 //int mpeg2ts_program_read_ts_packet(mpeg2ts_program_t *m2p, ts_packet_t *ts);
 int mpeg2ts_stream_reset(mpeg2ts_stream_t *m2s);

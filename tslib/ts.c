@@ -173,6 +173,55 @@ int ts_read_adaptation_field(ts_adaptation_field_t *af, bs_t *b)
    return (1 + bs_pos(b) - start_pos);
 }
 
+int ts_parse_scte128_af_private(ts_adaptation_field_t *af)
+{
+   if (af == NULL || af->private_data_bytes.len == 0)
+   {
+      return 0;
+   }
+
+   af->scte128_private_data = vqarray_new();
+   bs_t b;
+   bs_init(&b, af->private_data_bytes.bytes, af->private_data_bytes.len);
+
+   while (bs_bytes_left(&b))
+   {
+      uint32_t datalen;
+      uint8_t *data;
+
+      ts_scte128_private_data_t *scte128 =
+            (ts_scte128_private_data_t*)calloc(1, sizeof(ts_scte128_private_data_t));
+
+      scte128->tag = bs_read_u8(&b);
+      scte128->length = datalen = bs_read_u8(&b);
+      if (scte128->tag == 0xDF)
+      {
+         scte128->format_identifier = bs_read_u32(&b);
+         datalen -= 4;
+      }
+      if (datalen == 0) {
+         LOG_WARN("SCTE128 data with 0-length! Ignoring.");
+         free(scte128);
+         continue;
+      }
+
+      data = calloc(datalen, sizeof(uint8_t));
+      if (!bs_read_bytes(&b, data, (int)datalen))
+      {
+         free(scte128);
+         free(data);
+         LOG_ERROR("Illegal scte128 private data! Ignoring.");
+         return 0;
+      }
+      scte128->private_data_bytes.bytes = data;
+      scte128->private_data_bytes.len = datalen;
+
+      vqarray_add(af->scte128_private_data, (vqarray_elem_t*)scte128);
+   }
+
+   return 1;
+}
+
 int ts_read(ts_packet_t *ts, uint8_t *buf, size_t buf_size) 
 { 
    if (buf == NULL || buf_size < TS_SIZE || ts == NULL) 

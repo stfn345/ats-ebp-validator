@@ -33,6 +33,7 @@
 
 #include "bs.h"
 #include "common.h"
+#include "vqarray.h"
 
 #ifdef __cplusplus
 extern "C"
@@ -60,6 +61,14 @@ typedef struct {
    uint32_t adaptation_field_control;
    uint32_t continuity_counter;
 } ts_header_t;
+
+// SCTE-128 Adaptation Field Private Data
+typedef struct {
+   uint32_t tag;
+   uint32_t length;
+   uint32_t format_identifier;
+   buf_t private_data_bytes;
+} ts_scte128_private_data_t;
 
 typedef struct {
    uint32_t adaptation_field_length;
@@ -92,6 +101,8 @@ typedef struct {
 
    buf_t private_data_bytes;
 
+   vqarray_t *scte128_private_data;
+
 } ts_adaptation_field_t;
 
 typedef struct {
@@ -122,6 +133,8 @@ int ts_write(ts_packet_t *ts, uint8_t *buf, size_t buf_size);
 int ts_print_adaptation_field(const ts_adaptation_field_t *const af, char *str, size_t str_len);
 int ts_print_header(const ts_header_t *const tsh, char *str, size_t str_len);
 int ts_print(const ts_packet_t *const ts, char *str, size_t str_len);
+
+int ts_parse_scte128_af_private(ts_adaptation_field_t *af);
 
 int64_t ts_read_pcr(const ts_packet_t* const ts);
 

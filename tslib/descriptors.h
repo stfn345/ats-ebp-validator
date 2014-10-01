@@ -86,7 +86,12 @@ typedef enum {
     MPEG2_STEREOSCOPIC_VIDEO_FORMAT_DESCRIPTOR,
     STEREOSCOPIC_PROGRAM_INFO_DESCRIPTOR,
     STEREOSCOPIC_VIDEO_INFO_DESCRIPTOR,
-} mpeg_descriptor_t; // descriptors defined in ISO/IEC 13818-1:2012
+    // end of descriptors defined in ISO/IEC 13818-1:2012
+
+    ADAPTATION_FIELD_DATA_DESCRIPTOR = 0x97,
+    // end of SCTE 128 descriptors
+
+} mpeg_descriptor_t;
 
 typedef struct {
    uint32_t tag;

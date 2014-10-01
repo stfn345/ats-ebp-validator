@@ -71,6 +71,9 @@ mpeg2ts_program_t* mpeg2ts_program_new(int program_number, int PID)
    m2p->pcr_info.first_pcr = m2p->pcr_info.pcr[0] =  m2p->pcr_info.pcr[1] = INT64_MAX; 
    m2p->pcr_info.pcr_rate = 0.0; 
    
+   m2p->pmt_processor = NULL;
+   m2p->scte128_enabled = 1;
+
    return m2p;
 }
 
@@ -90,12 +93,43 @@ void mpeg2ts_program_free(mpeg2ts_program_t *m2p)
 //GORP     program_map_section_free(m2p->pmt);
    }
    
-   if (m2p->arg_destructor != NULL && m2p->arg != NULL) 
+   if (m2p->arg_destructor != NULL && m2p->arg != NULL)
    {
       m2p->arg_destructor(m2p->arg);
    }
    
    free(m2p);
+}
+
+int mpeg2ts_program_replace_pid_processor(mpeg2ts_program_t *m2p, pid_info_t *piNew)
+{
+   if (m2p == NULL) return 0;
+
+   int i;
+   uint32_t PID = piNew->es_info->elementary_PID;
+
+   pid_info_t *piOld = NULL;
+   for (i = 0; i < vqarray_length(m2p->pids); i++) // TODO replace linear search w/ hashtable lookup in the future
+   {
+      pid_info_t *tmp = NULL;
+      if ((tmp = vqarray_get(m2p->pids, i)) != NULL && tmp->es_info->elementary_PID == PID)
+      {
+         piOld = tmp;
+         break;
+      }
+   }
+   if (piOld == NULL) // not found
+   {
+       // just add as new entry
+      vqarray_add(m2p->pids, piNew);
+   }
+   else
+   {
+      pid_info_free(piOld);
+      vqarray_set(m2p->pids, i, piNew);
+   }
+
+   return 0;
 }
 
 int mpeg2ts_program_register_pid_processor(mpeg2ts_program_t *m2p, uint32_t PID, demux_pid_handler_t *handler, demux_pid_handler_t *validator) 
@@ -149,37 +183,6 @@ int mpeg2ts_program_unregister_pid_processor(mpeg2ts_program_t *m2p, uint32_t PI
    
    pid_info_free(pi); 
    vqarray_remove(m2p->pids, i); 
-   
-   return 0;
-}
-
-int mpeg2ts_program_replace_pid_processor(mpeg2ts_program_t *m2p, pid_info_t *piNew) 
-{ 
-   if (m2p == NULL) return 0; 
-   
-   int i; 
-   uint32_t PID = piNew->es_info->elementary_PID;
-
-   pid_info_t *piOld = NULL; 
-   for (i = 0; i < vqarray_length(m2p->pids); i++) // TODO replace linear search w/ hashtable lookup in the future
-   {
-      pid_info_t *tmp = NULL; 
-      if ((tmp = vqarray_get(m2p->pids, i)) != NULL && tmp->es_info->elementary_PID == PID) 
-      {
-         piOld = tmp; 
-         break;
-      }
-   }
-   if (piOld == NULL) // not found
-   {
-       // just add as new entry
-      vqarray_add(m2p->pids, piNew); 
-   }
-   else
-   {
-      pid_info_free(piOld); 
-      vqarray_set(m2p->pids, i, piNew); 
-   }
    
    return 0;
 }
@@ -463,6 +466,11 @@ int mpeg2ts_stream_reset(mpeg2ts_stream_t *m2s)
    return pid_cnt;
 }
 
+void mpeg2ts_program_enable_scte128(mpeg2ts_program_t *m2p)
+{
+   m2p->scte128_enabled = 1;
+}
+
 int mpeg2ts_stream_read_ts_packet(mpeg2ts_stream_t *m2s, ts_packet_t *ts) 
 {    
    if (m2s == NULL ) 
@@ -506,6 +514,9 @@ int mpeg2ts_stream_read_ts_packet(mpeg2ts_stream_t *m2s, ts_packet_t *ts)
       if (m2p->PID == ts->header.PID)
           return mpeg2ts_program_read_pmt(m2p, ts);  // got a PMT
 
+      if (m2p->scte128_enabled) {
+         ts_parse_scte128_af_private(&ts->adaptation_field);
+      }
      
       // pi == NULL => this PID does not belong to this program
       pi = mpeg2ts_program_get_pid_info(m2p, ts->header.PID); 

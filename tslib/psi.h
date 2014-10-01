@@ -154,7 +154,7 @@ int program_map_section_print(program_map_section_t *pms, char *str, size_t str_
 #define STREAM_TYPE_MPEG2_AAC               0x0F // ADTS
 #define STREAM_TYPE_MPEG4_VIDEO             0x10
 #define STREAM_TYPE_MPEG4_AAC               0x11 // LATM
-#define STREAM_TYPE MPEG4_SYS_PES           0x12
+#define STREAM_TYPE_MPEG4_SYS_PES           0x12
 #define STREAM_TYPE_MPEG2_SYS_SECTION       0x13
 #define STREAM_TYPE_DSMCC_SDP               0x14
 #define STREAM_TYPE_METADATA_PES            0x15
@@ -176,6 +176,18 @@ int program_map_section_print(program_map_section_t *pms, char *str, size_t str_
 #define STREAM_TYPE_IPMP		    0x7F
 //FIXME: handle registration descriptor
 #define STREAM_TYPE_AC3_AUDIO       0x81 // ATSC A/52B, A3.1 AC3 Stream Type
+
+#define IS_VIDEO_STREAM(x) ((x == STREAM_TYPE_MPEG1_VIDEO) || \
+                            (x == STREAM_TYPE_MPEG2_VIDEO) || \
+                            (x == STREAM_TYPE_MPEG4_VIDEO) || \
+                            (x == STREAM_TYPE_AVC))
+
+#define IS_AUDIO_STREAM(x) ((x == STREAM_TYPE_MPEG1_AUDIO) || \
+                            (x == STREAM_TYPE_MPEG2_AUDIO) || \
+                            (x == STREAM_TYPE_MPEG2_AAC) || \
+                            (x == STREAM_TYPE_MPEG4_AAC) || \
+                            (x == STREAM_TYPE_MPEG4_AAC_RAW) || \
+                            (x == STREAM_TYPE_AC3_AUDIO))
 
 #define PAT_PID			0
 #define CAT_PID			1
