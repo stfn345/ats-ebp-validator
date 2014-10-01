@@ -31,8 +31,8 @@ BINARIES = test
 
 all: $(BINARIES)
 
-test: main.c $(ALL_LIBS)
-	$(CC) $(CFLAGS) -o $@ $< $(LIBS)
+test: $(OBJS) $(ALL_LIBS)
+	$(CC) $(CFLAGS) -o $@ $(OBJS) $(LIBS)
 
 clean:
 	rm -f $(OBJS) $(BINARIES) core
