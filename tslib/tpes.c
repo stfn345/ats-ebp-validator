@@ -99,24 +99,24 @@ int pes_demux_process_ts_packet(ts_packet_t *ts, elementary_stream_info_t *es_in
          else
          {
          
-         buf_t *vec = malloc(packets_in_queue * sizeof(buf_t)); // can be optimized...
+            buf_t *vec = malloc(packets_in_queue * sizeof(buf_t)); // can be optimized...
          
-         for (int i = 0; i < packets_in_queue; i++) 
-         {
-            tsp = vqarray_get(pdm->ts_queue, i); 
-            if ((tsp != NULL) && (tsp->header.adaptation_field_control & TS_PAYLOAD)) 
+            for (int i = 0; i < packets_in_queue; i++)
             {
-               vec[i].len = tsp->payload.len; 
-               vec[i].bytes = tsp->payload.bytes;
+               tsp = vqarray_get(pdm->ts_queue, i);
+               if ((tsp != NULL) && (tsp->header.adaptation_field_control & TS_PAYLOAD))
+               {
+                  vec[i].len = tsp->payload.len;
+                  vec[i].bytes = tsp->payload.bytes;
+               }
+               else
+               {
+                  vec[i].len = 0;
+                  vec[i].bytes = NULL;
+               }
             }
-            else 
-            {
-               vec[i].len = 0; 
-               vec[i].bytes = NULL;
-            }            
-         }
-         pes_packet_t *pes = pes_new(); 
-         pes_read_vec(pes, vec, packets_in_queue);
+            pes_packet_t *pes = pes_new();
+            pes_read_vec(pes, vec, packets_in_queue);
             
             if (pdm->process_pes_packet != NULL) 
             {
@@ -124,9 +124,9 @@ int pes_demux_process_ts_packet(ts_packet_t *ts, elementary_stream_info_t *es_in
                pdm->process_pes_packet(pes, es_info, pdm->ts_queue, pdm->pes_arg);  
             }
             else 
-         {
-            pes_free(pes); 
-         }
+            {
+               pes_free(pes);
+            }
          
             free(vec);        
          }
