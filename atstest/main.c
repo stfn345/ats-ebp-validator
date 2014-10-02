@@ -4,6 +4,7 @@
 #include <mpeg2ts_demux.h>
 #include <libts_common.h>
 #include <tpes.h>
+#include <ebp.h>
 
 #define TS_SIZE 188
 
@@ -14,6 +15,45 @@ static int validate_ts_packet(ts_packet_t *ts, elementary_stream_info_t *es_info
 
 static int validate_pes_packet(pes_packet_t *pes, elementary_stream_info_t *esi, vqarray_t *ts_queue, void *arg)
 {
+   LOG_DEBUG("PES Packet!");
+
+   // Get the first TS packet and check it for EBP
+   ts_packet_t *ts = (ts_packet_t*)vqarray_get(ts_queue,0);
+
+   vqarray_t *scte128_data;
+   if (ts == NULL || !TS_HAS_ADAPTATION_FIELD(*ts) ||
+         (scte128_data = ts->adaptation_field.scte128_private_data) == NULL ||
+         vqarray_length(scte128_data) == 0)
+   {
+      pes_free(pes);
+      return 1; // Don't care about this packet
+   }
+
+   for (vqarray_iterator_t *it = vqarray_iterator_new(scte128_data);
+         vqarray_iterator_has_next(it);)
+   {
+      ts_scte128_private_data_t *scte128 = (ts_scte128_private_data_t*)vqarray_iterator_next(it);
+
+      // Validate that we have a tag of 0xDF and a format id of 'EBP0' (0x45425030)
+      if (scte128 != NULL && scte128->tag == 0xDF && scte128->format_identifier == 0x45425030)
+      {
+         LOG_DEBUG("Found EBP data in transport packet!");
+
+         if (!ts->header.payload_unit_start_indicator) {
+            LOG_ERROR("EBP present on a TS packet that does not have PUSI bit set!");
+            return 1;
+         }
+
+         // Parse the EBP
+         ebp_t *ebp = ebp_new();
+         if (!ebp_read(ebp, scte128))
+         {
+            LOG_ERROR("Error parsing EBP!");
+            return 1;
+         }
+      }
+   }
+
    return 1;
 }
 
@@ -52,14 +92,12 @@ static int pmt_processor(mpeg2ts_program_t *m2p, void *arg)
             pes_demux_t *pd = pes_demux_new(validate_pes_packet);
             pd->pes_arg = NULL;
             pd->pes_arg_destructor = NULL;
-            pd->process_pes_packet = validate_pes_packet;
 
             // hook PES demuxer to the PID processor
             demux_pid_handler_t *demux_handler = calloc(1, sizeof(demux_pid_handler_t));
             demux_handler->process_ts_packet = pes_demux_process_ts_packet;
             demux_handler->arg = pd;
             demux_handler->arg_destructor = (arg_destructor_t)pes_demux_free;
-
 
             // hook PES demuxer to the PID processor
             demux_pid_handler_t *demux_validator = calloc(1, sizeof(demux_pid_handler_t));

@@ -38,11 +38,13 @@ int ebp_read(ebp_t *ebp, ts_scte128_private_data_t *scte128)
    if (ebp->ebp_extension_flag)
    {
       ebp->ebp_ext_partition_flag = bs_read_u1(b);
+      bs_skip_u(b,7);
    }
 
    if (ebp->ebp_sap_flag)
    {
-      ebp->ebp_sap_type = bs_read_u1(b);
+      ebp->ebp_sap_type = bs_read_u(b, 3);
+      bs_skip_u(b, 5);
    }
 
    if (ebp->ebp_grouping_flag)

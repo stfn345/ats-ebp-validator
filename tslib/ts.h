@@ -47,6 +47,9 @@ extern "C"
 #define TS_PAYLOAD             0x01
 #define TS_ADAPTATION_FIELD    0x02
 
+#define TS_HAS_ADAPTATION_FIELD(ts) ((ts).header.adaptation_field_control & 2)
+#define TS_HAS_PAYLOAD(ts) ((ts).header.adaptation_field_control & 1)
+
 #define PCR_MAX          (1LL << 42)
 #define PCR_INVALID       INT64_MAX
 #define PCR_IS_VALID(P)  ( ( (P) >= 0 ) && ((P) <  PCR_MAX))
