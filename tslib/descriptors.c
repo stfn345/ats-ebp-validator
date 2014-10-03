@@ -77,6 +77,9 @@ void descriptor_free(descriptor_t *desc)
    case ISO_639_LANGUAGE_DESCRIPTOR:
       language_descriptor_free(desc); 
       break; 
+   case MAXIMUM_BITRATE_DESCRIPTOR:
+      max_bitrate_descriptor_free(desc);
+      break;
    default:
       free(desc); 
       break;
@@ -96,6 +99,9 @@ descriptor_t* descriptor_read(descriptor_t *desc, bs_t *b)
    case CA_DESCRIPTOR:
       desc = ca_descriptor_read(desc, b);
       break;
+   case MAXIMUM_BITRATE_DESCRIPTOR:
+      desc = max_bitrate_descriptor_read(desc, b);
+      break;
    default:
       bs_skip_bytes(b, desc->length);
    }
@@ -114,6 +120,9 @@ int descriptor_print(const descriptor_t *desc, int level, char *str, size_t str_
       break;
    case CA_DESCRIPTOR:
       ca_descriptor_print(desc, level, str, str_len);
+      break;
+   case MAXIMUM_BITRATE_DESCRIPTOR:
+      max_bitrate_descriptor_print(desc, level, str, str_len);
       break;
    default:
    bytes += SKIT_LOG_UINT(str + bytes, level, desc->tag, str_len - bytes); 
@@ -266,6 +275,58 @@ int ca_descriptor_print(const descriptor_t *desc, int level, char *str, size_t s
 
    bytes += SKIT_LOG_UINT(str + bytes, level, cad->CA_PID, str_len - bytes);
    bytes += SKIT_LOG_UINT(str + bytes, level, cad->CA_system_ID, str_len - bytes);
+   return bytes;
+}
+
+descriptor_t* max_bitrate_descriptor_new(descriptor_t *desc)
+{
+   max_bitrate_descriptor_t *maxbr = NULL;
+   maxbr = (max_bitrate_descriptor_t *)calloc(1, sizeof(max_bitrate_descriptor_t));
+   maxbr->descriptor.tag = MAXIMUM_BITRATE_DESCRIPTOR;
+   if (desc != NULL)
+   {
+      maxbr->descriptor.length = desc->length;
+      free(desc);
+   }
+   return (descriptor_t *)maxbr;
+}
+
+int max_bitrate_descriptor_free(descriptor_t *desc)
+{
+   if (desc == NULL) return 0;
+   if (desc->tag != MAXIMUM_BITRATE_DESCRIPTOR) return 0;
+
+   max_bitrate_descriptor_t *maxbr = (max_bitrate_descriptor_t *)desc;
+   free(maxbr);
+   return 1;
+}
+
+descriptor_t* max_bitrate_descriptor_read(descriptor_t *desc, bs_t *b)
+{
+   if ((desc == NULL) || (b == NULL)) return NULL;
+
+   max_bitrate_descriptor_t *maxbr =
+         (max_bitrate_descriptor_t *)max_bitrate_descriptor_new(desc);
+
+
+   bs_skip_u(b, 2);
+   maxbr->max_bitrate = bs_read_u(b, 22);
+
+   return (descriptor_t *)maxbr;
+}
+
+int max_bitrate_descriptor_print(const descriptor_t *desc, int level, char *str, size_t str_len)
+{
+   int bytes = 0;
+   if (desc == NULL) return 0;
+   if (desc->tag != MAXIMUM_BITRATE_DESCRIPTOR) return 0;
+
+   max_bitrate_descriptor_t *maxbr = (max_bitrate_descriptor_t *)desc;
+
+   bytes += SKIT_LOG_UINT_VERBOSE(str + bytes, level, desc->tag, "max_bitrate_descriptor", str_len - bytes);
+   bytes += SKIT_LOG_UINT(str + bytes, level, desc->length, str_len - bytes);
+
+   bytes += SKIT_LOG_UINT(str + bytes, level, maxbr->max_bitrate, str_len - bytes);
    return bytes;
 }
 

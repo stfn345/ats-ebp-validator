@@ -151,4 +151,15 @@ int ca_descriptor_free(descriptor_t *desc);
 descriptor_t* ca_descriptor_read(descriptor_t *desc, bs_t *b);
 int ca_descriptor_print(const descriptor_t *desc, int level, char *str, size_t str_len);
 
+
+typedef struct {
+   descriptor_t descriptor;
+   uint32_t max_bitrate;
+} max_bitrate_descriptor_t;
+
+descriptor_t* max_bitrate_descriptor_new(descriptor_t *desc);
+int max_bitrate_descriptor_free(descriptor_t *desc);
+descriptor_t* max_bitrate_descriptor_read(descriptor_t *desc, bs_t *b);
+int max_bitrate_descriptor_print(const descriptor_t *desc, int level, char *str, size_t str_len);
+
 #endif

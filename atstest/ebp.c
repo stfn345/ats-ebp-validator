@@ -77,3 +77,56 @@ int ebp_print(const ebp_t *ebp, char *str, size_t str_len)
 {
    return 1;
 }
+
+descriptor_t* ebp_descriptor_new(descriptor_t *desc)
+{
+   ebp_descriptor_t *ebp = NULL;
+   ebp = (ebp_descriptor_t *)calloc(1, sizeof(ebp_descriptor_t));
+   ebp->descriptor.tag = MAXIMUM_BITRATE_DESCRIPTOR;
+   if (desc != NULL)
+   {
+      ebp->descriptor.length = desc->length;
+      free(desc);
+   }
+   return (descriptor_t *)ebp;
+}
+
+int ebp_descriptor_free(descriptor_t *desc)
+{
+   if (desc == NULL) return 0;
+   if (desc->tag != MAXIMUM_BITRATE_DESCRIPTOR) return 0;
+
+   ebp_descriptor_t *ebp = (ebp_descriptor_t *)desc;
+   free(ebp);
+   return 1;
+}
+
+descriptor_t* ebp_descriptor_read(descriptor_t *desc, bs_t *b)
+{
+   if ((desc == NULL) || (b == NULL)) return NULL;
+
+   ebp_descriptor_t *maxbr =
+         (ebp_descriptor_t *)ebp_descriptor_new(desc);
+
+
+   bs_skip_u(b, 2);
+   //maxbr->max_bitrate = bs_read_u(b, 22);
+
+   return (descriptor_t *)maxbr;
+}
+
+int ebp_descriptor_print(const descriptor_t *desc, int level, char *str, size_t str_len)
+{
+   int bytes = 0;
+   if (desc == NULL) return 0;
+   if (desc->tag != MAXIMUM_BITRATE_DESCRIPTOR) return 0;
+
+   ebp_descriptor_t *maxbr = (ebp_descriptor_t *)desc;
+
+   bytes += SKIT_LOG_UINT_VERBOSE(str + bytes, level, desc->tag, "ebp_descriptor", str_len - bytes);
+   bytes += SKIT_LOG_UINT(str + bytes, level, desc->length, str_len - bytes);
+
+   //bytes += SKIT_LOG_UINT(str + bytes, level, maxbr->max_bitrate, str_len - bytes);
+   return bytes;
+}
+
