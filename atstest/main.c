@@ -29,6 +29,7 @@ static int validate_pes_packet(pes_packet_t *pes, elementary_stream_info_t *esi,
       return 1; // Don't care about this packet
    }
 
+   int found_ebp = 0;
    for (vqarray_iterator_t *it = vqarray_iterator_new(scte128_data);
          vqarray_iterator_has_next(it);)
    {
@@ -37,11 +38,17 @@ static int validate_pes_packet(pes_packet_t *pes, elementary_stream_info_t *esi,
       // Validate that we have a tag of 0xDF and a format id of 'EBP0' (0x45425030)
       if (scte128 != NULL && scte128->tag == 0xDF && scte128->format_identifier == 0x45425030)
       {
+         if (found_ebp)
+         {
+            LOG_ERROR("Multiple EBP structures detected with a single PES packet!  Not allowed!");
+            return 0;
+         }
          LOG_DEBUG("Found EBP data in transport packet!");
+         found_ebp = 1;
 
          if (!ts->header.payload_unit_start_indicator) {
             LOG_ERROR("EBP present on a TS packet that does not have PUSI bit set!");
-            return 1;
+            return 0;
          }
 
          // Parse the EBP
@@ -49,7 +56,7 @@ static int validate_pes_packet(pes_packet_t *pes, elementary_stream_info_t *esi,
          if (!ebp_read(ebp, scte128))
          {
             LOG_ERROR("Error parsing EBP!");
-            return 1;
+            return 0;
          }
       }
    }
