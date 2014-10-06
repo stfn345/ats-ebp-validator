@@ -98,9 +98,9 @@ typedef struct {
    uint32_t length;
 } descriptor_t;
 
-typedef descriptor_t* (*descriptor_reader_t)(void*, uint32_t, uint32_t, bs_t *);
+typedef descriptor_t* (*descriptor_reader_t)(descriptor_t*, bs_t *);
 typedef int (*descriptor_printer_t)(const descriptor_t *, int, char *, size_t);
-typedef void (*descriptor_destructor_t)(descriptor_t*);
+typedef int (*descriptor_destructor_t)(descriptor_t*);
 
 typedef struct {
 	uint32_t tag;
@@ -109,6 +109,12 @@ typedef struct {
    descriptor_destructor_t free_descriptor;
 } descriptor_table_entry_t; 
 
+// Must be called to initialize known descriptors and the descriptor
+// registration system
+void init_descriptors();
+
+// Register a new descriptor to be parsed by the system
+int register_descriptor(descriptor_table_entry_t *desc);
 
 // "factory methods"
 int read_descriptor_loop(vqarray_t *desc_list, bs_t *b, int length);
@@ -132,10 +138,10 @@ typedef struct {
 	int _num_languages;
 } language_descriptor_t;
 
-descriptor_t* language_descriptor_new(descriptor_t* desc);
-int language_descriptor_free(descriptor_t* desc);
-descriptor_t* language_descriptor_read(descriptor_t* desc, bs_t* b);
-int language_descriptor_print(const descriptor_t* desc, int level, char* str, size_t str_len);
+//descriptor_t* language_descriptor_new(descriptor_t* desc);
+//int language_descriptor_free(descriptor_t* desc);
+//descriptor_t* language_descriptor_read(descriptor_t* desc, bs_t* b);
+//int language_descriptor_print(const descriptor_t* desc, int level, char* str, size_t str_len);
 
 
 typedef struct {
@@ -146,10 +152,10 @@ typedef struct {
    size_t _private_data_bytes_buf_len;
 } ca_descriptor_t;
 
-descriptor_t* ca_descriptor_new(descriptor_t *desc);
-int ca_descriptor_free(descriptor_t *desc);
-descriptor_t* ca_descriptor_read(descriptor_t *desc, bs_t *b);
-int ca_descriptor_print(const descriptor_t *desc, int level, char *str, size_t str_len);
+//descriptor_t* ca_descriptor_new(descriptor_t *desc);
+//int ca_descriptor_free(descriptor_t *desc);
+//descriptor_t* ca_descriptor_read(descriptor_t *desc, bs_t *b);
+//int ca_descriptor_print(const descriptor_t *desc, int level, char *str, size_t str_len);
 
 
 typedef struct {
@@ -157,9 +163,9 @@ typedef struct {
    uint32_t max_bitrate;
 } max_bitrate_descriptor_t;
 
-descriptor_t* max_bitrate_descriptor_new(descriptor_t *desc);
-int max_bitrate_descriptor_free(descriptor_t *desc);
-descriptor_t* max_bitrate_descriptor_read(descriptor_t *desc, bs_t *b);
-int max_bitrate_descriptor_print(const descriptor_t *desc, int level, char *str, size_t str_len);
+//descriptor_t* max_bitrate_descriptor_new(descriptor_t *desc);
+//int max_bitrate_descriptor_free(descriptor_t *desc);
+//descriptor_t* max_bitrate_descriptor_read(descriptor_t *desc, bs_t *b);
+//int max_bitrate_descriptor_print(const descriptor_t *desc, int level, char *str, size_t str_len);
 
 #endif

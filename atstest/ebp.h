@@ -69,7 +69,8 @@ typedef struct {
 
 } ebp_descriptor_t;
 
-descriptor_t* ebp_descriptor_new(descriptor_t *desc);
+#define EBP_DESCRIPTOR 0xE9
+
 int ebp_descriptor_free(descriptor_t *desc);
 descriptor_t* ebp_descriptor_read(descriptor_t *desc, bs_t *b);
 int ebp_descriptor_print(const descriptor_t *desc, int level, char *str, size_t str_len);

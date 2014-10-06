@@ -31,6 +31,21 @@
 #include "descriptors.h"
 #include "log.h"
 
+#include <hashtable.h>
+#include <hashtable_str.h>
+
+DEFINE_HASHTABLE_INSERT(descriptor_table_insert, uint32_t, descriptor_table_entry_t);
+DEFINE_HASHTABLE_SEARCH(descriptor_table_search, uint32_t, descriptor_table_entry_t);
+DEFINE_HASHTABLE_REMOVE(descriptor_table_remove, uint32_t, descriptor_table_entry_t);
+
+static hashtable_t *g_descriptor_table = NULL;
+
+int register_descriptor(descriptor_table_entry_t *desc)
+{
+   descriptor_table_remove(g_descriptor_table, &desc->tag);
+   return descriptor_table_insert(g_descriptor_table, &desc->tag, desc);
+}
+
 // "factory methods"
 int read_descriptor_loop(vqarray_t *desc_list, bs_t *b, int length) 
 { 
@@ -71,62 +86,52 @@ descriptor_t* descriptor_new()
 
 void descriptor_free(descriptor_t *desc) 
 { 
-   if (!desc) return; 
-   switch (desc->tag) 
-   {
-   case ISO_639_LANGUAGE_DESCRIPTOR:
-      language_descriptor_free(desc); 
-      break; 
-   case MAXIMUM_BITRATE_DESCRIPTOR:
-      max_bitrate_descriptor_free(desc);
-      break;
-   default:
-      free(desc); 
-      break;
-   }
+   if (desc == NULL) return;
+   descriptor_table_entry_t *dte =
+         descriptor_table_search(g_descriptor_table, &desc->tag);
+   if (dte == NULL) return;
+
+   dte->free_descriptor(desc);
 }
 
 descriptor_t* descriptor_read(descriptor_t *desc, bs_t *b) 
 { 
-   desc->tag = bs_read_u8(b); 
-   desc->length = bs_read_u8(b); 
+   descriptor_t *retVal = NULL;
+
+   desc->tag = bs_read_u8(b);
+   desc->length = bs_read_u8(b);
+
+   if (desc == NULL || b == NULL) return NULL;
+   descriptor_table_entry_t *dte =
+         descriptor_table_search(g_descriptor_table, &desc->tag);
    
-   switch (desc->tag)
+   if (dte != NULL)
    {
-   case ISO_639_LANGUAGE_DESCRIPTOR:
-      desc = language_descriptor_read(desc, b); 
-      break;
-   case CA_DESCRIPTOR:
-      desc = ca_descriptor_read(desc, b);
-      break;
-   case MAXIMUM_BITRATE_DESCRIPTOR:
-      desc = max_bitrate_descriptor_read(desc, b);
-      break;
-   default:
+      retVal = dte->read_descriptor(desc, b);
+   }
+   else
+   {
       bs_skip_bytes(b, desc->length);
    }
-   
-   return desc;
+
+   return retVal;
 }
 
 int descriptor_print(const descriptor_t *desc, int level, char *str, size_t str_len) 
 { 
    if (desc == NULL || str == NULL || str_len < 2 || tslib_loglevel < TSLIB_LOG_LEVEL_INFO) return 0; 
    int bytes = 0; 
-   switch (desc->tag)
+   descriptor_table_entry_t *dte =
+         descriptor_table_search(g_descriptor_table, (uint32_t*)&desc->tag);
+
+   if (dte != NULL)
    {
-   case ISO_639_LANGUAGE_DESCRIPTOR:
-      language_descriptor_print(desc, level, str, str_len);
-      break;
-   case CA_DESCRIPTOR:
-      ca_descriptor_print(desc, level, str, str_len);
-      break;
-   case MAXIMUM_BITRATE_DESCRIPTOR:
-      max_bitrate_descriptor_print(desc, level, str, str_len);
-      break;
-   default:
-   bytes += SKIT_LOG_UINT(str + bytes, level, desc->tag, str_len - bytes); 
-   bytes += SKIT_LOG_UINT(str + bytes, level, desc->length, str_len - bytes); 
+      bytes = dte->print_descriptor(desc, level, str, str_len);
+   }
+   else
+   {
+      bytes += SKIT_LOG_UINT(str + bytes, level, desc->tag, str_len - bytes);
+      bytes += SKIT_LOG_UINT(str + bytes, level, desc->length, str_len - bytes);
    }
    
    return bytes;
@@ -149,14 +154,14 @@ descriptor_t* language_descriptor_new(descriptor_t *desc)
    return (descriptor_t *)ld;
 }
 
-int language_descriptor_free(descriptor_t *desc) 
+int language_descriptor_free(descriptor_t *desc)
 { 
-   if (desc == NULL) return 0; 
-   if (desc->tag != ISO_639_LANGUAGE_DESCRIPTOR) return 0; 
-   
-   language_descriptor_t *ld = (language_descriptor_t *)desc; 
-   if (ld->languages != NULL) free(ld->languages); 
-   free(ld); 
+   if (desc == NULL) return 0;
+   if (desc->tag != ISO_639_LANGUAGE_DESCRIPTOR) return 0;
+
+   language_descriptor_t *ld = (language_descriptor_t *)desc;
+   if (ld->languages != NULL) free(ld->languages);
+   free(ld);
    return 1;
 }
 
@@ -328,6 +333,42 @@ int max_bitrate_descriptor_print(const descriptor_t *desc, int level, char *str,
 
    bytes += SKIT_LOG_UINT(str + bytes, level, maxbr->max_bitrate, str_len - bytes);
    return bytes;
+}
+
+void init_descriptors()
+{
+   if (g_descriptor_table != NULL)
+      return;
+
+   g_descriptor_table =
+         hashtable_new(hashtable_hashfn_uint32, hashtable_eqfn_uint32);
+
+   // Register our known descriptors
+   descriptor_table_entry_t *d;
+
+   // ISO 639 language
+   d = calloc(1, sizeof(descriptor_table_entry_t));
+   d->tag = ISO_639_LANGUAGE_DESCRIPTOR;
+   d->free_descriptor = language_descriptor_free;
+   d->print_descriptor = language_descriptor_print;
+   d->read_descriptor = language_descriptor_read;
+   register_descriptor(d);
+
+   // CA descriptor
+   d = calloc(1, sizeof(descriptor_table_entry_t));
+   d->tag = CA_DESCRIPTOR;
+   d->free_descriptor = ca_descriptor_free;
+   d->print_descriptor = ca_descriptor_print;
+   d->read_descriptor = ca_descriptor_read;
+   register_descriptor(d);
+
+   // Max bitrate descriptor
+   d = calloc(1, sizeof(descriptor_table_entry_t));
+   d->tag = MAXIMUM_BITRATE_DESCRIPTOR;
+   d->free_descriptor = max_bitrate_descriptor_free;
+   d->print_descriptor = max_bitrate_descriptor_print;
+   d->read_descriptor = max_bitrate_descriptor_read;
+   register_descriptor(d);
 }
 
 /*

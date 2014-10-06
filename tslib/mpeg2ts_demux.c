@@ -31,6 +31,7 @@
 #include "mpeg2ts_demux.h"
 #include "cas.h"
 #include "psi.h"
+#include <descriptors.h>
 
 pid_info_t* pid_info_new() 
 { 
@@ -227,6 +228,7 @@ mpeg2ts_stream_t* mpeg2ts_stream_new()
 { 
    mpeg2ts_stream_t *m2s = calloc(1, sizeof(mpeg2ts_stream_t)); 
    m2s->programs = vqarray_new(); 
+   init_descriptors();
    return m2s;
 }
 

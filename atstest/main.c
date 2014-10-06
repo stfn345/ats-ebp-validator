@@ -162,6 +162,18 @@ int main(int argc, char** argv) {
       return 1;
    }
 
+   // Register EBP descriptor parser
+   descriptor_table_entry_t *desc = calloc(1, sizeof(descriptor_table_entry_t));
+   desc->tag = EBP_DESCRIPTOR;
+   desc->free_descriptor = ebp_descriptor_free;
+   desc->print_descriptor = ebp_descriptor_print;
+   desc->read_descriptor = ebp_descriptor_read;
+   if (!register_descriptor(desc))
+   {
+      LOG_ERROR("Could not register EBP descriptor parser!");
+      return 1;
+   }
+
    m2s->pat_processor = (pat_processor_t)pat_processor;
 
    int num_packets = 4096;
