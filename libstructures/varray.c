@@ -68,7 +68,7 @@ void varray_clear(varray_t* v) { v->length = 0; }
    Returns length of array.
    @param v the array
  */
-inline int varray_length(varray_t* v) { return v->length; }
+int varray_length(varray_t* v) { return v->length; }
 
 /**
    Get the element at the given index in the array.
@@ -77,7 +77,7 @@ inline int varray_length(varray_t* v) { return v->length; }
    @param v the array
    @param i the index
  */
-inline varray_elem_t* varray_get(varray_t* v, int i)
+varray_elem_t* varray_get(varray_t* v, int i)
 {
     if (i < 0 || i >= v->length) { return NULL; }
     return v->array[i];
@@ -90,7 +90,7 @@ inline varray_elem_t* varray_get(varray_t* v, int i)
    @param i the index
    @param e the element
 */
-inline void varray_set(varray_t* v, int i, varray_elem_t* e)
+void varray_set(varray_t* v, int i, varray_elem_t* e)
 {
     if (i < 0) { return; }
     _varray_expand_to_length(v, i+1);

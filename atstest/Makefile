@@ -27,11 +27,11 @@ LIBS = -L . -L$(TSLIB_LIB_DIR) -ltslib -L../h264bitstream/.libs -lh264bitstream 
 CFLAGS  += $(INCLUDES)
 LDFLAGS += $(LIBS)
 
-BINARIES = test
+BINARIES = ATSTestApp
 
 all: $(BINARIES)
 
-test: $(OBJS) $(ALL_LIBS)
+ATSTestApp: $(OBJS) $(ALL_LIBS)
 	$(CC) $(CFLAGS) -o $@ $(OBJS) $(LIBS)
 
 clean:

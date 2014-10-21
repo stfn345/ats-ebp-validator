@@ -5,135 +5,383 @@
 #include <libts_common.h>
 #include <tpes.h>
 #include <ebp.h>
+#include <pthread.h>
+
+#include "ThreadSafeFIFO.h"
+#include "EBPFileIngestThread.h"
+#include "EBPSegmentAnalysisThread.h"
 
 #define TS_SIZE 188
 
-static int validate_ts_packet(ts_packet_t *ts, elementary_stream_info_t *es_info, void *arg)
+static int g_bPATFound = 0;
+static int g_bPMTFound = 0;
+
+
+typedef struct
 {
-   return 1;
-}
-
-static int validate_pes_packet(pes_packet_t *pes, elementary_stream_info_t *esi, vqarray_t *ts_queue, void *arg)
-{
-   LOG_DEBUG("PES Packet!");
-
-   // Get the first TS packet and check it for EBP
-   ts_packet_t *ts = (ts_packet_t*)vqarray_get(ts_queue,0);
-
-   vqarray_t *scte128_data;
-   if (ts == NULL || !TS_HAS_ADAPTATION_FIELD(*ts) ||
-         (scte128_data = ts->adaptation_field.scte128_private_data) == NULL ||
-         vqarray_length(scte128_data) == 0)
-   {
-      pes_free(pes);
-      return 1; // Don't care about this packet
-   }
-
-   int found_ebp = 0;
-   for (vqarray_iterator_t *it = vqarray_iterator_new(scte128_data);
-         vqarray_iterator_has_next(it);)
-   {
-      ts_scte128_private_data_t *scte128 = (ts_scte128_private_data_t*)vqarray_iterator_next(it);
-
-      // Validate that we have a tag of 0xDF and a format id of 'EBP0' (0x45425030)
-      if (scte128 != NULL && scte128->tag == 0xDF && scte128->format_identifier == 0x45425030)
-      {
-         if (found_ebp)
-         {
-            LOG_ERROR("Multiple EBP structures detected with a single PES packet!  Not allowed!");
-            return 0;
-         }
-         LOG_DEBUG("Found EBP data in transport packet!");
-         found_ebp = 1;
-
-         if (!ts->header.payload_unit_start_indicator) {
-            LOG_ERROR("EBP present on a TS packet that does not have PUSI bit set!");
-            return 0;
-         }
-
-         // Parse the EBP
-         ebp_t *ebp = ebp_new();
-         if (!ebp_read(ebp, scte128))
-         {
-            LOG_ERROR("Error parsing EBP!");
-            return 0;
-         }
-      }
-   }
-
-   return 1;
-}
+   int numStreams;
+   uint32_t *stream_types;
+   uint32_t *PIDs;
+} program_stream_info_t;
 
 static int pmt_processor(mpeg2ts_program_t *m2p, void *arg)
 {
+   printf ("pmt_processor\n");
+   g_bPMTFound = 1;
+
    if (m2p == NULL || m2p->pmt == NULL) // if we don't have any PSI, there's nothing we can do
       return 0;
-
-   pid_info_t *pi = NULL;
-   for (int i = 0; i < vqarray_length(m2p->pids); i++) // TODO replace linear search w/ hashtable lookup in the future
-   {
-      if ((pi = vqarray_get(m2p->pids, i)) != NULL)
-      {
-         int handle_pid = 0;
-
-         if (IS_VIDEO_STREAM(pi->es_info->stream_type))
-         {
-            // Look for the SCTE128 descriptor in the ES loop
-            descriptor_t *desc = NULL;
-            for (int d = 0; d < vqarray_length(pi->es_info->descriptors); d++)
-            {
-               if ((desc = vqarray_get(pi->es_info->descriptors, d)) != NULL && desc->tag == 0x97)
-               {
-                  mpeg2ts_program_enable_scte128(m2p);
-               }
-            }
-            handle_pid = 1;
-         }
-         else if (IS_AUDIO_STREAM(pi->es_info->stream_type))
-         {
-            handle_pid = 1;
-         }
-
-         if (handle_pid)
-         {
-            pes_demux_t *pd = pes_demux_new(validate_pes_packet);
-            pd->pes_arg = NULL;
-            pd->pes_arg_destructor = NULL;
-
-            // hook PES demuxer to the PID processor
-            demux_pid_handler_t *demux_handler = calloc(1, sizeof(demux_pid_handler_t));
-            demux_handler->process_ts_packet = pes_demux_process_ts_packet;
-            demux_handler->arg = pd;
-            demux_handler->arg_destructor = (arg_destructor_t)pes_demux_free;
-
-            // hook PES demuxer to the PID processor
-            demux_pid_handler_t *demux_validator = calloc(1, sizeof(demux_pid_handler_t));
-            demux_validator->process_ts_packet = validate_ts_packet;
-            demux_validator->arg = NULL;
-            demux_validator->arg_destructor = NULL;
-
-            // hook PID processor to PID
-            mpeg2ts_program_register_pid_processor(m2p, pi->es_info->elementary_PID, demux_handler, demux_validator);
-         }
-      }
-   }
 
    return 1;
 }
 
 static int pat_processor(mpeg2ts_stream_t *m2s, void *arg)
 {
+   printf ("pat_processor\n");
+   g_bPATFound = 1;
+
    for (int i = 0; i < vqarray_length(m2s->programs); i++)
    {
       mpeg2ts_program_t *m2p = vqarray_get(m2s->programs, i);
 
       if (m2p == NULL) continue;
       m2p->pmt_processor =  (pmt_processor_t)pmt_processor;
+      m2p->arg = arg;
    }
    return 1;
 }
 
-int main(int argc, char** argv) {
+
+int prereadFiles(int numFiles, char **fileNames, program_stream_info_t *programStreamInfo)
+{
+   printf ("prereadFiles: entering\n");
+
+   for (int i=0; i<numFiles; i++)
+   {
+      printf ("FilePath %d = %s\n", i, fileNames[i]); 
+
+      // reset PAT/PMT read flags
+      g_bPATFound = 0;
+      g_bPMTFound = 0;
+
+      FILE *infile = NULL;
+      if ((infile = fopen(fileNames[i], "rb")) == NULL)
+      {
+         LOG_ERROR_ARGS("Cannot open file %s - %s", fileNames[i], strerror(errno));
+         return 1;
+      }
+
+      mpeg2ts_stream_t *m2s = NULL;
+
+      if (NULL == (m2s = mpeg2ts_stream_new()))
+      {
+         LOG_ERROR("Error creating MPEG-2 STREAM object");
+         return 1;
+      }
+
+      m2s->pat_processor = (pat_processor_t)pat_processor;
+      m2s->arg = NULL;
+      m2s->arg_destructor = NULL;
+
+      int num_packets = 4096;
+      uint8_t *ts_buf = malloc(TS_SIZE * 4096);
+
+      while (!(g_bPATFound && g_bPMTFound) && 
+         (num_packets = fread(ts_buf, TS_SIZE, 4096, infile)) > 0)
+      {
+         for (int i = 0; i < num_packets; i++)
+         {
+            ts_packet_t *ts = ts_new();
+            ts_read(ts, ts_buf + i * TS_SIZE, TS_SIZE);
+            mpeg2ts_stream_read_ts_packet(m2s, ts);
+
+            // check if PAT?PMT read -- if so, break out
+            if (g_bPATFound && g_bPMTFound)
+            {
+               printf ("PAT/PMT found -- breaking\n");
+               break;
+            }
+         }
+      }
+
+      
+      mpeg2ts_program_t *m2p = ( mpeg2ts_program_t *) vqarray_get(m2s->programs, 0);
+      pid_info_t *pi = NULL;
+
+      programStreamInfo[i].numStreams = vqarray_length(m2p->pids);
+      programStreamInfo[i].stream_types = (uint32_t*) calloc (programStreamInfo[i].numStreams, sizeof (uint32_t));
+      programStreamInfo[i].PIDs = (uint32_t*) calloc (programStreamInfo[i].numStreams, sizeof (uint32_t));
+
+      for (int j = 0; j < vqarray_length(m2p->pids); j++)
+      {
+         if ((pi = vqarray_get(m2p->pids, j)) != NULL)
+         {
+            printf ("stream %d: stream_type = %u, elementary_PID = %u, ES_info_length = %u\n",
+               j, pi->es_info->stream_type, pi->es_info->elementary_PID, pi->es_info->ES_info_length);
+
+            programStreamInfo[i].stream_types[j] = pi->es_info->stream_type;
+            programStreamInfo[i].PIDs[j] = pi->es_info->elementary_PID;
+         }
+      }
+
+      mpeg2ts_stream_free(m2s);
+
+      fclose(infile);
+   }
+
+   printf ("prereadFiles: exiting\n");
+   return 0;
+}
+
+int get2DArrayIndex (int fileIndex, int streamIndex, int numStreams)
+{
+   return fileIndex * numStreams + streamIndex;
+}
+
+int teardownQueues(int numFiles, int numStreams, thread_safe_fifo_t **fifoArray)
+{
+   printf ("teardownQueues: entering\n");
+   int returnCode = 0;
+
+   for (int fileIndex=0; fileIndex < numFiles; fileIndex++)
+   {
+      for (int streamIndex=0; streamIndex < numStreams; streamIndex++)
+      {
+         int arrayIndex = get2DArrayIndex (fileIndex, streamIndex, numStreams);
+         thread_safe_fifo_t *fifo = fifoArray[arrayIndex];
+
+         printf ("teardownQueues: fifo (file_index = %d, streamIndex = %d, PID = %d) push_counter = %d, pop_counter = %d\n", 
+            fileIndex, streamIndex, fifo->PID, fifo->push_counter, fifo->pop_counter);
+         printf ("teardownQueues: arrayIndex = %d: calling fifo_destroy: fifo = %x\n", arrayIndex,
+            (unsigned int)fifo);
+         returnCode = fifo_destroy (fifo);
+         if (returnCode != 0)
+         {
+            printf ("setupQueues: error destroying queue\n");
+         }
+
+         free (fifo);
+      }
+   }
+
+   free (fifoArray);
+
+   printf ("teardownQueues: exiting\n");
+   return 0;
+}
+
+int setupQueues(int numFiles, char **fileNames, program_stream_info_t *programStreamInfo,
+                thread_safe_fifo_t ***fifoArray, int *totalNumStreams)
+{
+   printf ("setupQueues: entering\n");
+
+   int returnCode;
+
+   // we need to set up a 2D array of queueus.  The array size is numFiles x numStreams
+   // where numStreams is the total of all possible streams (video + all possible audio).
+   // so if one file contains an audio stream and another file contains two other DIFFERENT
+   // audio files, then the total number of streams is 4 (video + 3 audio).
+
+   // GORP: we need to distinguish audio streams, but for now, distinguish by PID
+   // GORP: we need to count number of distinct audio streams in set of files, but for now, 
+   // just assume that all files have the same audio streams
+   
+   int numStreams = programStreamInfo[0].numStreams;
+   *totalNumStreams = numStreams;
+
+   // *fifoArray is an array of fifo pointers, not fifos.  this way, if a particular fifo is not
+   // needed for a file, that fifo pointer can be left null
+   *fifoArray = (thread_safe_fifo_t **) calloc (numFiles * numStreams, sizeof (thread_safe_fifo_t*));
+
+   for (int fileIndex=0; fileIndex < numFiles; fileIndex++)
+   {
+      for (int streamIndex=0; streamIndex < numStreams; streamIndex++)
+      {
+         int arrayIndex = get2DArrayIndex (fileIndex, streamIndex, numStreams);
+         (*fifoArray)[arrayIndex] = (thread_safe_fifo_t *)calloc (1, sizeof (thread_safe_fifo_t));
+         thread_safe_fifo_t *fifo = (*fifoArray)[arrayIndex];
+
+         printf ("setupQueues: arrayIndex = %d: calling fifo_create: fifo = %x\n", arrayIndex,
+            (unsigned int)fifo);
+         returnCode = fifo_create (fifo, fileIndex);
+         if (returnCode != 0)
+         {
+            printf ("setupQueues: error creating queue\n");
+            return -1;
+         }
+
+         fifo->PID = ((programStreamInfo[fileIndex]).PIDs)[streamIndex];
+         uint32_t streamType = ((programStreamInfo[fileIndex]).stream_types)[streamIndex];
+         fifo->isVideo = IS_VIDEO_STREAM(streamType);
+      }
+   }
+
+   printf ("setupQueues: exiting\n");
+   return 0;
+}
+
+int startThreads(int numFiles, int totalNumStreams, thread_safe_fifo_t **fifoArray, char **fileNames,
+   pthread_t ***fileIngestThreads, pthread_t ***analysisThreads, pthread_attr_t *threadAttr)
+{
+   printf ("startThreads: entering\n");
+
+   int returnCode = 0;
+
+   // one worker thread per file, one analysis thread per streamtype
+   // num worker thread = numFiles
+   // num analysis threads = totalNumStreams
+
+   pthread_attr_init(threadAttr);
+   pthread_attr_setdetachstate(threadAttr, PTHREAD_CREATE_JOINABLE);
+
+
+   // start analyzer threads
+   *analysisThreads = (pthread_t **) calloc (totalNumStreams, sizeof(pthread_t*));
+   for (int threadIndex = 0; threadIndex < totalNumStreams; threadIndex++)
+   {
+      // GORP: free these somewhere
+      thread_safe_fifo_t **fifos = (thread_safe_fifo_t **)calloc(numFiles, sizeof (thread_safe_fifo_t*));
+      for (int i=0; i<numFiles; i++)
+      {
+         int arrayIndex = get2DArrayIndex (i, threadIndex, totalNumStreams);
+
+         fifos[i] = fifoArray[arrayIndex];
+      }
+      
+      EBPSegmentAnalysisThreadParams *ebpSegmentAnalysisThreadParams = (EBPSegmentAnalysisThreadParams *)malloc (sizeof(EBPSegmentAnalysisThreadParams));
+      ebpSegmentAnalysisThreadParams->threadID = 100 + threadIndex;
+      ebpSegmentAnalysisThreadParams->numFifos = numFiles;
+      ebpSegmentAnalysisThreadParams->fifos = fifos;
+
+      (*analysisThreads)[threadIndex] = (pthread_t *)malloc (sizeof (pthread_t));
+      pthread_t *analyzerThread = (*analysisThreads)[threadIndex];
+      printf("In main: creating analyzer thread\n");
+      returnCode = pthread_create(analyzerThread, threadAttr, EBPSegmentAnalysisThreadProc, (void *)ebpSegmentAnalysisThreadParams);
+      if (returnCode)
+      {
+          printf("ERROR %d creating analyzer thread\n", returnCode);
+          exit(-1);
+      }
+   }
+
+
+   // start the file ingest threads
+   *fileIngestThreads = (pthread_t **) calloc (numFiles, sizeof(pthread_t*));
+   for (int threadIndex = 0; threadIndex < numFiles; threadIndex++)
+   {
+      int arrayIndex = get2DArrayIndex (threadIndex, 0, totalNumStreams);
+      printf ("arrayindex = %d\n", arrayIndex);
+      thread_safe_fifo_t **fifos = &(fifoArray[arrayIndex]);
+       
+      printf ("fifos = %x\n", (unsigned int)fifos);
+      printf ("fifos[0]->PID = %d\n", fifos[0]->PID);
+      
+      EBPFileIngestThreadParams *ebpFileIngestThreadParams = (EBPFileIngestThreadParams *)malloc (sizeof(EBPFileIngestThreadParams));
+      ebpFileIngestThreadParams->threadNum = threadIndex;
+      ebpFileIngestThreadParams->numFifos = totalNumStreams;
+      ebpFileIngestThreadParams->fifos = fifos;
+      ebpFileIngestThreadParams->filePath = fileNames[threadIndex];
+
+      (*fileIngestThreads)[threadIndex] = (pthread_t *)malloc (sizeof (pthread_t));
+      pthread_t *fileIngestThread = (*fileIngestThreads)[threadIndex];
+      printf("In main: creating fileIngest thread\n");
+      returnCode = pthread_create(fileIngestThread, threadAttr, EBPFileIngestThreadProc, (void *)ebpFileIngestThreadParams);
+      if (returnCode)
+      {
+          printf("ERROR %d creating fileIngest thread\n", returnCode);
+          exit(-1);
+      }
+  }
+
+   printf ("startThreads: exiting\n");
+   return 0;
+}
+  
+int waitForThreadsToExit(int numFiles, int totalNumStreams,
+   pthread_t **fileIngestThreads, pthread_t **analysisThreads, pthread_attr_t *threadAttr)
+{
+   printf ("waitForThreadsToExit: entering\n");
+   void *status;
+   int returnCode;
+
+   for (int threadIndex = 0; threadIndex < totalNumStreams; threadIndex++)
+   {
+      returnCode = pthread_join(*(analysisThreads[threadIndex]), &status);
+      if (returnCode) 
+      {
+          printf("ERROR; pthread_join() returned: %d\n", returnCode);
+ //         exit(-1);
+      }
+
+      printf("Completed join with analyzer thread %d: status = %ld\n", threadIndex, (long)status);
+   }
+
+   for (int threadIndex = 0; threadIndex < numFiles; threadIndex++)
+   {
+      returnCode = pthread_join(*(fileIngestThreads[threadIndex]), &status);
+      if (returnCode) 
+      {
+          printf("ERROR; pthread_join() returned: %d\n", returnCode);
+ //         exit(-1);
+      }
+
+      printf("Completed join with fileIngest thread %d: status = %ld\n", threadIndex, (long)status);
+   }
+
+   pthread_attr_destroy(threadAttr);
+        
+   printf ("waitForThreadsToExit: exiting\n");
+   return 0;
+}
+
+int main(int argc, char** argv) 
+{
+   printf ("In Main\n");
+
+   if (argc < 2)
+   {
+      return 1;
+   }
+
+   int numFiles = argc-1;
+   for (int i=0; i<numFiles; i++)
+   {
+      printf ("FilePath %d = %s\n", i, argv[i+1]); 
+   }
+
+   program_stream_info_t *programStreamInfo = (program_stream_info_t *)calloc (numFiles, 
+      sizeof (program_stream_info_t));
+
+   prereadFiles(numFiles, &argv[1], programStreamInfo);
+
+   // array of fifo pointers
+   thread_safe_fifo_t **fifoArray = NULL;
+   int totalNumStreams;
+   setupQueues(numFiles, &argv[1], programStreamInfo, &fifoArray, &totalNumStreams);
+
+   pthread_t **fileIngestThreads;
+   pthread_t **analysisThreads;
+   pthread_attr_t threadAttr;
+
+   startThreads(numFiles, totalNumStreams, fifoArray, &argv[1],
+      &fileIngestThreads, &analysisThreads, &threadAttr);
+
+
+   waitForThreadsToExit(numFiles, totalNumStreams, fileIngestThreads, analysisThreads, &threadAttr);
+
+   printf ("Calling teardownQueues\n");
+   teardownQueues(numFiles, totalNumStreams, fifoArray);
+
+   pthread_exit(NULL);
+
+   return 0;
+}
+
+
+int was_main2(int argc, char** argv) 
+{
+    printf ("In Main\n");
+    printf ("argc = %d\n", argc);
 
    if (argc < 2)
    {
@@ -175,6 +423,8 @@ int main(int argc, char** argv) {
    }
 
    m2s->pat_processor = (pat_processor_t)pat_processor;
+   m2s->arg = NULL;
+   m2s->arg_destructor = NULL;
 
    int num_packets = 4096;
    uint8_t *ts_buf = malloc(TS_SIZE * 4096);

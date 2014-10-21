@@ -36,6 +36,7 @@ ebp_t *ebp_new();
 void ebp_free(ebp_t *ebp);
 int ebp_read(ebp_t *ebp, ts_scte128_private_data_t *scte128);
 int ebp_print(const ebp_t *ebp, char *str, size_t str_len);
+void ebp_print_stdout(const ebp_t *ebp);
 
 typedef struct {
 
@@ -74,6 +75,11 @@ typedef struct {
 int ebp_descriptor_free(descriptor_t *desc);
 descriptor_t* ebp_descriptor_read(descriptor_t *desc, bs_t *b);
 int ebp_descriptor_print(const descriptor_t *desc, int level, char *str, size_t str_len);
+void ebp_descriptor_print_stdout(const ebp_descriptor_t *ebp_desc);
+ebp_descriptor_t* ebp_descriptor_copy(const ebp_descriptor_t *ebp_desc);
+
+uint64_t ntohll(uint64_t num);
+
 
 #ifdef __cplusplus
 }
