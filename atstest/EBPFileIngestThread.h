@@ -27,15 +27,19 @@ typedef struct
     int numStreamInfos;
     ebp_stream_info_t **streamInfos;
 
+    int *filePassFail;
+
 } ebp_file_ingest_thread_params_t;
 
 void cleanupAndExit(ebp_file_ingest_thread_params_t *ebpFileIngestThreadParams);
-void postToFIFO (uint64_t PTS, uint32_t sapType, ebp_t *ebp, ebp_descriptor_t *ebpDescriptor,
+int postToFIFO (uint64_t PTS, uint32_t sapType, ebp_t *ebp, ebp_descriptor_t *ebpDescriptor,
                  uint32_t PID, ebp_file_ingest_thread_params_t *ebpFileIngestThreadParams);
+
 ebp_descriptor_t* getEBPDescriptor (elementary_stream_info_t *esi);
 void findFIFO (uint32_t PID, ebp_stream_info_t **streamInfos, int numStreamInfos,
    thread_safe_fifo_t**fifoOut, int *fifoIndex);
-ebp_t* getEBP(ts_packet_t *ts);
+ebp_t* getEBP(ts_packet_t *ts, ebp_stream_info_t * streamInfo, int threadNum);
+static char* getStreamTypeDesc (elementary_stream_info_t *esi);
 
 void *EBPFileIngestThreadProc(void *threadParams);
 

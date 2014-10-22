@@ -26,7 +26,7 @@ typedef struct
 
 static int pmt_processor(mpeg2ts_program_t *m2p, void *arg)
 {
-   printf ("pmt_processor\n");
+   LOG_DEBUG ("pmt_processor");
    g_bPMTFound = 1;
 
    if (m2p == NULL || m2p->pmt == NULL) // if we don't have any PSI, there's nothing we can do
@@ -37,7 +37,7 @@ static int pmt_processor(mpeg2ts_program_t *m2p, void *arg)
 
 static int pat_processor(mpeg2ts_stream_t *m2s, void *arg)
 {
-   printf ("pat_processor\n");
+   LOG_DEBUG ("pat_processor");
    g_bPATFound = 1;
 
    for (int i = 0; i < vqarray_length(m2s->programs); i++)
@@ -53,11 +53,11 @@ static int pat_processor(mpeg2ts_stream_t *m2s, void *arg)
 
 int prereadFiles(int numFiles, char **fileNames, program_stream_info_t *programStreamInfo)
 {
-   printf ("prereadFiles: entering\n");
+   LOG_INFO ("prereadFiles: entering");
 
    for (int i=0; i<numFiles; i++)
    {
-      printf ("FilePath %d = %s\n", i, fileNames[i]); 
+      LOG_INFO_ARGS ("Main:prereadFiles: FilePath %d = %s", i, fileNames[i]); 
 
       // reset PAT/PMT read flags
       g_bPATFound = 0;
@@ -66,16 +66,16 @@ int prereadFiles(int numFiles, char **fileNames, program_stream_info_t *programS
       FILE *infile = NULL;
       if ((infile = fopen(fileNames[i], "rb")) == NULL)
       {
-         LOG_ERROR_ARGS("Cannot open file %s - %s", fileNames[i], strerror(errno));
-         return 1;
+         LOG_ERROR_ARGS("Main:prereadFiles: Cannot open file %s - %s", fileNames[i], strerror(errno));
+         return -1;
       }
 
       mpeg2ts_stream_t *m2s = NULL;
 
       if (NULL == (m2s = mpeg2ts_stream_new()))
       {
-         LOG_ERROR("Error creating MPEG-2 STREAM object");
-         return 1;
+         LOG_ERROR_ARGS("Main:prereadFiles: Error creating MPEG-2 STREAM object for file %s", fileNames[i]);
+         return -1;
       }
 
       m2s->pat_processor = (pat_processor_t)pat_processor;
@@ -97,7 +97,7 @@ int prereadFiles(int numFiles, char **fileNames, program_stream_info_t *programS
             // check if PAT?PMT read -- if so, break out
             if (g_bPATFound && g_bPMTFound)
             {
-               printf ("PAT/PMT found -- breaking\n");
+               LOG_DEBUG ("Main:prereadFiles: PAT/PMT found");
                break;
             }
          }
@@ -115,7 +115,7 @@ int prereadFiles(int numFiles, char **fileNames, program_stream_info_t *programS
       {
          if ((pi = vqarray_get(m2p->pids, j)) != NULL)
          {
-            printf ("stream %d: stream_type = %u, elementary_PID = %u, ES_info_length = %u\n",
+            LOG_DEBUG_ARGS ("Main:prereadFiles: stream %d: stream_type = %u, elementary_PID = %u, ES_info_length = %u",
                j, pi->es_info->stream_type, pi->es_info->elementary_PID, pi->es_info->ES_info_length);
 
             programStreamInfo[i].stream_types[j] = pi->es_info->stream_type;
@@ -128,7 +128,7 @@ int prereadFiles(int numFiles, char **fileNames, program_stream_info_t *programS
       fclose(infile);
    }
 
-   printf ("prereadFiles: exiting\n");
+   LOG_INFO ("Main:prereadFiles: exiting");
    return 0;
 }
 
@@ -139,7 +139,7 @@ int get2DArrayIndex (int fileIndex, int streamIndex, int numStreams)
 
 int teardownQueues(int numFiles, int numStreams, ebp_stream_info_t **streamInfoArray)
 {
-   printf ("teardownQueues: entering\n");
+   LOG_INFO ("Main:teardownQueues: entering");
    int returnCode = 0;
 
    for (int fileIndex=0; fileIndex < numFiles; fileIndex++)
@@ -149,14 +149,16 @@ int teardownQueues(int numFiles, int numStreams, ebp_stream_info_t **streamInfoA
          int arrayIndex = get2DArrayIndex (fileIndex, streamIndex, numStreams);
          ebp_stream_info_t *streamInfo = streamInfoArray[arrayIndex];
 
-         printf ("teardownQueues: fifo (file_index = %d, streamIndex = %d, PID = %d) push_counter = %d, pop_counter = %d\n", 
+         LOG_INFO_ARGS ("Main:teardownQueues: fifo (file_index = %d, streamIndex = %d, PID = %d) push_counter = %d, pop_counter = %d", 
             fileIndex, streamIndex, streamInfo->PID, streamInfo->fifo->push_counter, streamInfo->fifo->pop_counter);
-         printf ("teardownQueues: arrayIndex = %d: calling fifo_destroy: fifo = %x\n", arrayIndex,
-            (unsigned int)streamInfo->fifo);
+         LOG_DEBUG_ARGS ("Main:teardownQueues: calling fifo_destroy for file %d stream %d", 
+               fileIndex, streamIndex);
          returnCode = fifo_destroy (streamInfo->fifo);
          if (returnCode != 0)
          {
-            printf ("teardownQueues: error destroying queue\n");
+            LOG_ERROR_ARGS ("Main:teardownQueues: FAIL: error destroying queue for file %d stream %d",
+               fileIndex, streamIndex);
+            returnCode = -1;
          }
 
          free (streamInfo->fifo);
@@ -166,14 +168,14 @@ int teardownQueues(int numFiles, int numStreams, ebp_stream_info_t **streamInfoA
 
    free (streamInfoArray);
 
-   printf ("teardownQueues: exiting\n");
-   return 0;
+   LOG_INFO ("Main:teardownQueues: exiting");
+   return returnCode;
 }
 
 int setupQueues(int numFiles, char **fileNames, program_stream_info_t *programStreamInfo,
                 ebp_stream_info_t ***streamInfoArray, int *numStreamsPerFile)
 {
-   printf ("setupQueues: entering\n");
+   LOG_INFO ("Main:setupQueues: entering");
 
    int returnCode;
 
@@ -203,11 +205,13 @@ int setupQueues(int numFiles, char **fileNames, program_stream_info_t *programSt
 
          streamInfo->fifo = (thread_safe_fifo_t *)calloc (1, sizeof (thread_safe_fifo_t));
 
-         printf ("setupQueues: arrayIndex = %d: calling fifo_create: fifo = %x\n", arrayIndex, (unsigned int)streamInfo->fifo);
+         LOG_DEBUG_ARGS ("Main:setupQueues: calling fifo_create for file %d, stream %d", 
+               fileIndex, streamIndex);
          returnCode = fifo_create (streamInfo->fifo, fileIndex);
          if (returnCode != 0)
          {
-            printf ("setupQueues: error creating queue\n");
+            LOG_ERROR_ARGS ("Main:setupQueues: error creating fifo for file %d, stream %d", 
+               fileIndex, streamIndex);
             return -1;
          }
 
@@ -218,18 +222,18 @@ int setupQueues(int numFiles, char **fileNames, program_stream_info_t *programSt
          streamInfo->ebpImplicitPID = 0;
          streamInfo->lastVideoChunkPTS = 0;
          streamInfo->lastVideoChunkPTSValid = 0;
-         streamInfo->testPassFail = 1;
+         streamInfo->streamPassFail = 1;
       }
    }
 
-   printf ("setupQueues: exiting\n");
+   LOG_INFO ("Main:setupQueues: exiting");
    return 0;
 }
 
 int startThreads(int numFiles, int totalNumStreams, ebp_stream_info_t **streamInfoArray, char **fileNames,
-   pthread_t ***fileIngestThreads, pthread_t ***analysisThreads, pthread_attr_t *threadAttr)
+   int *filePassFails, pthread_t ***fileIngestThreads, pthread_t ***analysisThreads, pthread_attr_t *threadAttr)
 {
-   printf ("startThreads: entering\n");
+   LOG_INFO ("Main:startThreads: entering");
 
    int returnCode = 0;
 
@@ -261,12 +265,13 @@ int startThreads(int numFiles, int totalNumStreams, ebp_stream_info_t **streamIn
 
       (*analysisThreads)[threadIndex] = (pthread_t *)malloc (sizeof (pthread_t));
       pthread_t *analyzerThread = (*analysisThreads)[threadIndex];
-      printf("In main: creating analyzer thread\n");
+      LOG_INFO_ARGS("Main:startThreads: creating analyzer thread %d", threadIndex);
       returnCode = pthread_create(analyzerThread, threadAttr, EBPSegmentAnalysisThreadProc, (void *)ebpSegmentAnalysisThreadParams);
       if (returnCode)
       {
-          printf("ERROR %d creating analyzer thread\n", returnCode);
-          exit(-1);
+         LOG_ERROR_ARGS("Main:startThreads: FAIL: error %d creating analyzer thread %d", 
+            returnCode, threadIndex);
+          return -1;
       }
    }
 
@@ -276,50 +281,50 @@ int startThreads(int numFiles, int totalNumStreams, ebp_stream_info_t **streamIn
    for (int threadIndex = 0; threadIndex < numFiles; threadIndex++)
    {
       int arrayIndex = get2DArrayIndex (threadIndex, 0, totalNumStreams);
-      printf ("arrayindex = %d\n", arrayIndex);
       ebp_stream_info_t **streamInfos = &(streamInfoArray[arrayIndex]);
-       
-      printf ("streamInfos = %x\n", (unsigned int)streamInfos);
-      printf ("streamInfos[0]->PID = %d\n", streamInfos[0]->PID);
-      
+             
       ebp_file_ingest_thread_params_t *ebpFileIngestThreadParams = (ebp_file_ingest_thread_params_t *)malloc (sizeof(ebp_file_ingest_thread_params_t));
       ebpFileIngestThreadParams->threadNum = threadIndex;
       ebpFileIngestThreadParams->numStreamInfos = totalNumStreams;
       ebpFileIngestThreadParams->streamInfos = streamInfos;
       ebpFileIngestThreadParams->filePath = fileNames[threadIndex];
+      ebpFileIngestThreadParams->filePassFail = &(filePassFails[threadIndex]);
 
       (*fileIngestThreads)[threadIndex] = (pthread_t *)malloc (sizeof (pthread_t));
       pthread_t *fileIngestThread = (*fileIngestThreads)[threadIndex];
-      printf("In main: creating fileIngest thread\n");
+      LOG_INFO_ARGS("Main:startThreads: creating fileIngest thread %d", threadIndex);
       returnCode = pthread_create(fileIngestThread, threadAttr, EBPFileIngestThreadProc, (void *)ebpFileIngestThreadParams);
       if (returnCode)
       {
-          printf("ERROR %d creating fileIngest thread\n", returnCode);
-          exit(-1);
+         LOG_ERROR_ARGS("Main:startThreads: FAIL: error %d creating fileIngest thread %d", 
+            returnCode, threadIndex);
+          return -1;
       }
   }
 
-   printf ("startThreads: exiting\n");
+   LOG_INFO("Main:startThreads: exiting");
    return 0;
 }
   
 int waitForThreadsToExit(int numFiles, int totalNumStreams,
    pthread_t **fileIngestThreads, pthread_t **analysisThreads, pthread_attr_t *threadAttr)
 {
-   printf ("waitForThreadsToExit: entering\n");
+   LOG_INFO("Main:waitForThreadsToExit: entering");
    void *status;
-   int returnCode;
+   int returnCode = 0;
 
    for (int threadIndex = 0; threadIndex < totalNumStreams; threadIndex++)
    {
       returnCode = pthread_join(*(analysisThreads[threadIndex]), &status);
       if (returnCode) 
       {
-          printf("ERROR; pthread_join() returned: %d\n", returnCode);
- //         exit(-1);
+         LOG_ERROR_ARGS ("Main:waitForThreadsToExit: error %d from pthread_join() for analysis thread %d",
+            returnCode, threadIndex);
+         returnCode = -1;
       }
 
-      printf("Completed join with analyzer thread %d: status = %ld\n", threadIndex, (long)status);
+      LOG_INFO_ARGS("Main:waitForThreadsToExit: completed join with analysis thread %d: status = %ld", 
+         threadIndex, (long)status);
    }
 
    for (int threadIndex = 0; threadIndex < numFiles; threadIndex++)
@@ -327,22 +332,61 @@ int waitForThreadsToExit(int numFiles, int totalNumStreams,
       returnCode = pthread_join(*(fileIngestThreads[threadIndex]), &status);
       if (returnCode) 
       {
-          printf("ERROR; pthread_join() returned: %d\n", returnCode);
- //         exit(-1);
+         LOG_ERROR_ARGS ("Main:waitForThreadsToExit: error %d from pthread_join() for fileIngest thread %d",
+            returnCode, threadIndex);
+         returnCode = -1;
       }
 
-      printf("Completed join with fileIngest thread %d: status = %ld\n", threadIndex, (long)status);
+      LOG_INFO_ARGS("Main:waitForThreadsToExit: completed join with fileIngest thread %d: status = %ld", 
+         threadIndex, (long)status);
    }
 
    pthread_attr_destroy(threadAttr);
         
-   printf ("waitForThreadsToExit: exiting\n");
-   return 0;
+   LOG_INFO ("Main:waitForThreadsToExit: exiting");
+   return returnCode;
+}
+
+void analyzeResults(int numFiles, int numStreams, ebp_stream_info_t **streamInfoArray, char **fileNames,
+   int *filePassFails)
+{
+   LOG_INFO ("");
+   LOG_INFO ("");
+   LOG_INFO ("TEST RESULTS");
+   LOG_INFO ("");
+
+   for (int i=0; i<numFiles; i++)
+   {
+      LOG_INFO_ARGS ("File %s", fileNames[i]);
+      LOG_INFO_ARGS ("   File PassFail Result: %s", (filePassFails[i]?"PASS":"FAIL"));
+      LOG_INFO ("   Stream PassFail Results:");
+      for (int j=0; j<numStreams; j++)
+      {
+         int arrayIndex = get2DArrayIndex (i, j, numStreams);
+         ebp_stream_info_t *streamInfo = streamInfoArray[arrayIndex];
+
+         if (streamInfo == NULL)
+         {
+            // if stream is absent from this file
+            continue;
+         }
+
+         // GORP: include video/audio info
+         // GORP: include expicit/implicit info
+         LOG_INFO_ARGS ("      PID %d: %s", streamInfo->PID,
+            (streamInfo->streamPassFail?"PASS":"FAIL"));
+      }
+      LOG_INFO ("");
+   }
+
+   LOG_INFO ("TEST RESULTS END");
+   LOG_INFO ("");
+   LOG_INFO ("");
 }
 
 int main(int argc, char** argv) 
 {
-   printf ("In Main\n");
+   LOG_INFO ("Main: entering");
 
    if (argc < 2)
    {
@@ -352,103 +396,71 @@ int main(int argc, char** argv)
    int numFiles = argc-1;
    for (int i=0; i<numFiles; i++)
    {
-      printf ("FilePath %d = %s\n", i, argv[i+1]); 
+      LOG_INFO_ARGS ("Main: FilePath %d = %s", i, argv[i+1]); 
    }
 
    program_stream_info_t *programStreamInfo = (program_stream_info_t *)calloc (numFiles, 
       sizeof (program_stream_info_t));
+   int *filePassFails = calloc(numFiles, sizeof(int));
+   for (int i=0; i<numFiles; i++)
+   {
+      filePassFails[i] = 1;
+   }
 
-   prereadFiles(numFiles, &argv[1], programStreamInfo);
+   int returnCode = prereadFiles(numFiles, &argv[1], programStreamInfo);
+   if (returnCode != 0)
+   {
+      LOG_ERROR ("Main: FATAL ERROR during prereadFiles: exiting"); 
+      exit (-1);
+   }
 
 
    // array of fifo pointers
    ebp_stream_info_t **streamInfoArray = NULL;
    int numStreamsPerFile;
-   setupQueues(numFiles, &argv[1], programStreamInfo, &streamInfoArray, &numStreamsPerFile);
+   returnCode = setupQueues(numFiles, &argv[1], programStreamInfo, &streamInfoArray, &numStreamsPerFile);
+   if (returnCode != 0)
+   {
+      LOG_ERROR ("Main: FATAL ERROR during setupQueues: exiting"); 
+      exit (-1);
+   }
 
    pthread_t **fileIngestThreads;
    pthread_t **analysisThreads;
    pthread_attr_t threadAttr;
 
-   startThreads(numFiles, numStreamsPerFile, streamInfoArray, &argv[1],
+   returnCode = startThreads(numFiles, numStreamsPerFile, streamInfoArray, &argv[1], filePassFails,
       &fileIngestThreads, &analysisThreads, &threadAttr);
+   if (returnCode != 0)
+   {
+      LOG_ERROR ("Main: FATAL ERROR during startThreads: exiting"); 
+      exit (-1);
+   }
 
 
-   waitForThreadsToExit(numFiles, numStreamsPerFile, fileIngestThreads, analysisThreads, &threadAttr);
+   returnCode = waitForThreadsToExit(numFiles, numStreamsPerFile, fileIngestThreads, analysisThreads, &threadAttr);
+   if (returnCode != 0)
+   {
+      LOG_ERROR ("Main: FATAL ERROR during waitForThreadsToExit: exiting"); 
+      exit (-1);
+   }
 
-   printf ("Calling teardownQueues\n");
-   teardownQueues(numFiles, numStreamsPerFile, streamInfoArray);
+   // analyze the pass fail results
+   analyzeResults(numFiles, numStreamsPerFile, streamInfoArray, &argv[1], filePassFails);
+
+
+   returnCode = teardownQueues(numFiles, numStreamsPerFile, streamInfoArray);
+   if (returnCode != 0)
+   {
+      LOG_ERROR ("Main: FATAL ERROR during teardownQueues: exiting"); 
+      exit (-1);
+   }
+
+   free (programStreamInfo);
+   free (filePassFails);
 
    pthread_exit(NULL);
 
+   LOG_INFO ("Main: exiting");
    return 0;
-}
-
-
-int was_main2(int argc, char** argv) 
-{
-    printf ("In Main\n");
-    printf ("argc = %d\n", argc);
-
-   if (argc < 2)
-   {
-      return 1;
-   }
-
-   char *fname = argv[1];
-   if (fname == NULL || fname[0] == 0)
-   {
-      LOG_ERROR("No input file provided");
-      return 1;
-   }
-
-   FILE *infile = NULL;
-   if ((infile = fopen(fname, "rb")) == NULL)
-   {
-      LOG_ERROR_ARGS("Cannot open file %s - %s", fname, strerror(errno));
-      return 1;
-   }
-
-   mpeg2ts_stream_t *m2s = NULL;
-
-   if (NULL == (m2s = mpeg2ts_stream_new()))
-   {
-      LOG_ERROR("Error creating MPEG-2 STREAM object");
-      return 1;
-   }
-
-   // Register EBP descriptor parser
-   descriptor_table_entry_t *desc = calloc(1, sizeof(descriptor_table_entry_t));
-   desc->tag = EBP_DESCRIPTOR;
-   desc->free_descriptor = ebp_descriptor_free;
-   desc->print_descriptor = ebp_descriptor_print;
-   desc->read_descriptor = ebp_descriptor_read;
-   if (!register_descriptor(desc))
-   {
-      LOG_ERROR("Could not register EBP descriptor parser!");
-      return 1;
-   }
-
-   m2s->pat_processor = (pat_processor_t)pat_processor;
-   m2s->arg = NULL;
-   m2s->arg_destructor = NULL;
-
-   int num_packets = 4096;
-   uint8_t *ts_buf = malloc(TS_SIZE * 4096);
-
-   while ((num_packets = fread(ts_buf, TS_SIZE, 4096, infile)) > 0)
-   {
-      for (int i = 0; i < num_packets; i++)
-      {
-         ts_packet_t *ts = ts_new();
-         ts_read(ts, ts_buf + i * TS_SIZE, TS_SIZE);
-         mpeg2ts_stream_read_ts_packet(m2s, ts);
-      }
-   }
-
-   mpeg2ts_stream_free(m2s);
-
-   fclose(infile);
-
-   return tslib_errno;
 }

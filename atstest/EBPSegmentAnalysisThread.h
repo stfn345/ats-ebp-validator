@@ -22,9 +22,8 @@
 
 typedef struct 
 {  
-   int threadID;  // GORP: put these in debug statements
+   int threadID;
    int numStreamInfos;
-//   thread_safe_fifo_t **fifos;
    ebp_stream_info_t **streamInfos;
 
 } ebp_segment_analysis_thread_params_t;
@@ -35,7 +34,7 @@ typedef struct
    uint32_t SAPType;
 
    ebp_t *EBP;
-   ebp_descriptor_t *latestEBPDescriptor;  // GORP: may need to copy this else ingest code frees it?
+   ebp_descriptor_t *latestEBPDescriptor;
 
 } ebp_segment_info_t;
 

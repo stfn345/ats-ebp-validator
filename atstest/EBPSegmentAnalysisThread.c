@@ -38,7 +38,7 @@ void *EBPSegmentAnalysisThreadProc(void *threadParams)
    int queueExit = 0;
 
    ebp_segment_analysis_thread_params_t *ebpSegmentAnalysisThreadParams = (ebp_segment_analysis_thread_params_t *)threadParams;
-   printf("EBPSegmentAnalysisThread (%d) starting...\n", ebpSegmentAnalysisThreadParams->threadID);
+   LOG_INFO_ARGS("EBPSegmentAnalysisThread %d: starting...", ebpSegmentAnalysisThreadParams->threadID);
 
    int *fifoNotActive = (int *) calloc (ebpSegmentAnalysisThreadParams->numStreamInfos, sizeof (int));
 
@@ -46,14 +46,14 @@ void *EBPSegmentAnalysisThreadProc(void *threadParams)
       ebpSegmentAnalysisThreadParams->streamInfos, fifoNotActive);
    if (returnCode != 0)
    {
-      // GORP: handle return code
+      LOG_ERROR_ARGS("EBPSegmentAnalysisThread %d: Fatal error syncing streams: exiting", 
+         ebpSegmentAnalysisThreadParams->threadID);
+      exit (-1);
    }
 
    int exitThread = 0;
    while (!exitThread)
    {
-//      printf ("EBPSegmentAnalysisThread (%d): in while: numFifos = %d\n", ebpSegmentAnalysisThreadParams->threadID,
-//         ebpSegmentAnalysisThreadParams->numFifos);
       exitThread = 1;
 
       int64_t nextPTS = 0;
@@ -64,27 +64,30 @@ void *EBPSegmentAnalysisThreadProc(void *threadParams)
          ebp_stream_info_t *streamInfo = ebpSegmentAnalysisThreadParams->streamInfos[i];
          if (fifoNotActive[i] || fifo == NULL)
          {
-            printf ("EBPSegmentAnalysisThread (%d): fifo %d not active --- skipping\n", ebpSegmentAnalysisThreadParams->threadID, i);
+            LOG_DEBUG_ARGS ("EBPSegmentAnalysisThread %d: fifo %d not active --- skipping", ebpSegmentAnalysisThreadParams->threadID, i);
             continue;
          }
 
          void *element;
-         printf ("EBPSegmentAnalysisThread (%d) calling fifo_pop for fifo %d\n", ebpSegmentAnalysisThreadParams->threadID, i);
+         LOG_DEBUG_ARGS ("EBPSegmentAnalysisThread %d: calling fifo_pop for fifo %d", ebpSegmentAnalysisThreadParams->threadID, i);
          returnCode = fifo_pop (fifo, &element);
          if (returnCode != 0)
          {
-            printf ("EBPSegmentAnalysisThread (%d) error %d calling fifo_pop for fifo %d\n", ebpSegmentAnalysisThreadParams->threadID,
+            LOG_ERROR_ARGS ("EBPSegmentAnalysisThread %d: FATAL error %d calling fifo_pop for fifo %d", ebpSegmentAnalysisThreadParams->threadID,
                returnCode, i);
-            // GORP: do something here
+
+            // fatal error here
+            streamInfo->streamPassFail = 0;
+            exit (-1);
          }
          else
          {
-//            printf ("EBPSegmentAnalysisThread (%d) pop complete: element = %x\n", ebpSegmentAnalysisThreadParams->threadID,
+//            LOG_DEBUG_ARGS ("EBPSegmentAnalysisThread (%d) pop complete: element = %x", ebpSegmentAnalysisThreadParams->threadID,
 //               (unsigned int)element);
 
             if (element == NULL)
             {
-               printf ("EBPSegmentAnalysisThread (%d) pop complete: element = NULL: marking fifo %d as inactive\n", 
+               LOG_DEBUG_ARGS ("EBPSegmentAnalysisThread %d: pop complete: element = NULL: marking fifo %d as inactive", 
                   ebpSegmentAnalysisThreadParams->threadID, i);
                // worker thread is done -- keep track of these
                fifoNotActive[i] = 1;
@@ -92,8 +95,9 @@ void *EBPSegmentAnalysisThreadProc(void *threadParams)
             else
             {
                ebp_segment_info_t *ebpSegmentInfo = (ebp_segment_info_t *)element;
-               printf ("EBPSegmentAnalysisThread (%d): POPPED PTS = %"PRId64" from fifo %d (PID %d), descriptor = %x\n", 
-                  ebpSegmentAnalysisThreadParams->threadID, ebpSegmentInfo->PTS, i, streamInfo->PID, (unsigned int)(ebpSegmentInfo->latestEBPDescriptor));
+               LOG_INFO_ARGS ("EBPSegmentAnalysisThread %d: POPPED PTS = %"PRId64" from fifo %d (PID %d), descriptor = %x", 
+                  ebpSegmentAnalysisThreadParams->threadID, ebpSegmentInfo->PTS, i, streamInfo->PID, 
+                  (unsigned int)(ebpSegmentInfo->latestEBPDescriptor));
 
                if (nextPTS == 0)
                {
@@ -103,8 +107,9 @@ void *EBPSegmentAnalysisThreadProc(void *threadParams)
                {
                   if (ebpSegmentInfo->PTS != nextPTS)
                   {
-                     printf ("EBPSegmentAnalysisThread (%d): FAIL: PTS MISMATCH for fifo %d (PID %d). Expected %"PRId64", Actual %"PRId64"\n",
+                     LOG_ERROR_ARGS ("EBPSegmentAnalysisThread %d: FAIL: PTS MISMATCH for fifo %d (PID %d). Expected %"PRId64", Actual %"PRId64"",
                         ebpSegmentAnalysisThreadParams->threadID, i, streamInfo->PID, nextPTS, ebpSegmentInfo->PTS);
+                     streamInfo->streamPassFail = 0;
                   }
                }
                
@@ -115,7 +120,7 @@ void *EBPSegmentAnalysisThreadProc(void *threadParams)
       }
    }
 
-   printf("EBPSegmentAnalysisThread (%d) exiting...\n", ebpSegmentAnalysisThreadParams->threadID);
+   LOG_INFO_ARGS ("EBPSegmentAnalysisThread %d: exiting...", ebpSegmentAnalysisThreadParams->threadID);
    free (ebpSegmentAnalysisThreadParams->streamInfos);
    free (ebpSegmentAnalysisThreadParams);
    pthread_exit(NULL);
@@ -127,32 +132,34 @@ int syncIncomingStreams (int threadID, int numStreamInfos, ebp_stream_info_t **s
    int returnCode = 0;
    void *element;
          
-   printf ("EBPSegmentAnalysisThread:syncIncomingStreams (%d): entering\n", threadID);
+   LOG_INFO_ARGS ("EBPSegmentAnalysisThread:syncIncomingStreams %d: entering ", threadID);
 
    // cycle through all fifos and peek at starting PTS -- take the latest of these as the starting 
    // PTS for the stream analysis
    for (int i=0; i<numStreamInfos; i++)
    {
-      thread_safe_fifo_t *fifo =streamInfos[i]->fifo;
+      ebp_stream_info_t *streamInfo = streamInfos[i];
+      thread_safe_fifo_t *fifo = streamInfos[i]->fifo;
       if (fifoNotActive[i] || fifo == NULL)
       {
-         printf ("EBPSegmentAnalysisThread:syncIncomingStreams (%d): fifo %d not active --- skipping\n", threadID, i);
+         LOG_INFO_ARGS ("EBPSegmentAnalysisThread:syncIncomingStreams %d: fifo %d not active --- skipping", threadID, i);
          continue;
       }
 
-      printf ("EBPSegmentAnalysisThread:syncIncomingStreams (%d) calling fifo_peek for fifo %d\n", threadID, i);
+      LOG_DEBUG_ARGS ("EBPSegmentAnalysisThread:syncIncomingStreams %d: calling fifo_peek for fifo %d", threadID, i);
       returnCode = fifo_peek (fifo, &element);
       if (returnCode != 0)
       {
-         printf ("EBPSegmentAnalysisThread:syncIncomingStreams (%d) error %d calling fifo_peek for fifo %d\n", threadID,
+         LOG_ERROR_ARGS ("EBPSegmentAnalysisThread:syncIncomingStreams %d: FATAL error %d calling fifo_peek for fifo %d", threadID,
             returnCode, i);
-         // fatal error here -- exit thread?
-         continue;
+         streamInfo->streamPassFail = 0;
+         // fatal error here -- exit
+         exit (-1);
       }
 
       if (element == NULL)
       {
-         printf ("EBPSegmentAnalysisThread:syncIncomingStreams (%d) peek complete: element = NULL: marking fifo %d inactive\n", 
+         LOG_INFO_ARGS ("EBPSegmentAnalysisThread:syncIncomingStreams %d: peek complete: element = NULL: marking fifo %d inactive", 
             threadID, i);
          // worker thread is done -- keep track of these
          fifoNotActive[i] = 1;
@@ -160,7 +167,7 @@ int syncIncomingStreams (int threadID, int numStreamInfos, ebp_stream_info_t **s
       else
       {            
          ebp_segment_info_t *ebpSegmentInfo = (ebp_segment_info_t *)element;
-         printf ("EBPSegmentAnalysisThread:syncIncomingStreams (%d): PEEKED PTS = %"PRId64" from fifo %d (PID %d), descriptor = %x\n", 
+         LOG_DEBUG_ARGS ("EBPSegmentAnalysisThread:syncIncomingStreams %d: PEEKED PTS = %"PRId64" from fifo %d (PID %d), descriptor = %x", 
             threadID, ebpSegmentInfo->PTS, i, streamInfos[i]->PID, (unsigned int)(ebpSegmentInfo->latestEBPDescriptor));               
          if (ebpSegmentInfo->PTS > startPTS)
          {
@@ -169,33 +176,36 @@ int syncIncomingStreams (int threadID, int numStreamInfos, ebp_stream_info_t **s
       }
    }
          
-   printf ("EBPSegmentAnalysisThread:syncIncomingStreams (%d): starting PTS = %"PRId64"\n", threadID, startPTS);               
+   LOG_INFO_ARGS ("EBPSegmentAnalysisThread:syncIncomingStreams %d: starting PTS = %"PRId64"", threadID, startPTS);               
 
    // next cycle through all queues and peek at PTS, popping off ones that are prior to the analysis start PTS
    for (int i=0; i<numStreamInfos; i++)
    {
+      ebp_stream_info_t *streamInfo = streamInfos[i];
       thread_safe_fifo_t *fifo = streamInfos[i]->fifo;
       if (fifoNotActive[i] || fifo == NULL)
       {
-         printf ("EBPSegmentAnalysisThread:syncIncomingStreams (%d) pruning: fifo %d not active --- skipping\n", threadID, i);
+         LOG_INFO_ARGS ("EBPSegmentAnalysisThread:syncIncomingStreams %d: pruning: fifo %d not active --- skipping", threadID, i);
          continue;
       }
 
       while (1)
       {
-         printf ("EBPSegmentAnalysisThread:syncIncomingStreams (%d) pruning: calling fifo_peek for fifo %d\n", threadID, i);
+         LOG_DEBUG_ARGS ("EBPSegmentAnalysisThread:syncIncomingStreams %d: pruning: calling fifo_peek for fifo %d", threadID, i);
          returnCode = fifo_peek (fifo, &element);
          if (returnCode != 0)
          {
-            printf ("EBPSegmentAnalysisThread:syncIncomingStreams (%d) pruning: error %d calling fifo_peek for fifo %d\n", threadID,
+            LOG_ERROR_ARGS ("EBPSegmentAnalysisThread:syncIncomingStreams %d: pruning: FATAL error %d calling fifo_peek for fifo %d", threadID,
                returnCode, i);
-            // fatal error here -- exit thread?
-            break;
+
+            streamInfo->streamPassFail = 0;
+            // fatal error here -- exit
+            exit (-1);
          }
 
          if (element == NULL)
          {
-            printf ("EBPSegmentAnalysisThread:syncIncomingStreams (%d) pruning: pop complete: element = NULL -- marking fifo %d inactive\n", threadID, i);
+            LOG_INFO_ARGS ("EBPSegmentAnalysisThread:syncIncomingStreams %d: pruning: pop complete: element = NULL -- marking fifo %d inactive", threadID, i);
             // worker thread is done -- keep track of these
             fifoNotActive[i] = 1;
             break;
@@ -203,18 +213,19 @@ int syncIncomingStreams (int threadID, int numStreamInfos, ebp_stream_info_t **s
          else
          {            
             ebp_segment_info_t *ebpSegmentInfo = (ebp_segment_info_t *)element;
-            printf ("EBPSegmentAnalysisThread:syncIncomingStreams (%d) pruning: PEEKED PTS = %"PRId64" from fifo %d (PID %d)\n", 
+            LOG_INFO_ARGS ("EBPSegmentAnalysisThread:syncIncomingStreams %d: pruning: PEEKED PTS = %"PRId64" from fifo %d (PID %d)", 
                threadID, ebpSegmentInfo->PTS, i, streamInfos[i]->PID);               
             if (ebpSegmentInfo->PTS < startPTS)
             {
-               printf ("EBPSegmentAnalysisThread:syncIncomingStreams (%d) pruning: calling fifo_pop for fifo %d\n", threadID, i);
+               LOG_INFO_ARGS ("EBPSegmentAnalysisThread:syncIncomingStreams %d: pruning: calling fifo_pop for fifo %d", threadID, i);
                returnCode = fifo_pop (fifo, &element);
                if (returnCode != 0)
                {
-                  printf ("EBPSegmentAnalysisThread:syncIncomingStreams (%d) pruning: error %d calling fifo_pop for fifo %d\n", threadID,
+                  LOG_ERROR_ARGS ("EBPSegmentAnalysisThread:syncIncomingStreams %d: pruning: FATAL error %d calling fifo_pop for fifo %d", threadID,
                      returnCode, i);
-                  // fatal error here -- exit thread?
-                  break;
+                  streamInfo->streamPassFail = 0;
+                  // fatal error here -- exit
+                  exit (-1);
                }
             }
             else
@@ -226,7 +237,7 @@ int syncIncomingStreams (int threadID, int numStreamInfos, ebp_stream_info_t **s
       }
    }
    
-   printf ("EBPSegmentAnalysisThread:syncIncomingStreams (%d): complete\n", threadID);
+   LOG_INFO_ARGS ("EBPSegmentAnalysisThread:syncIncomingStreams (%d): complete", threadID);
 
    return 0;
 }

@@ -19,6 +19,7 @@
 #define __H_EBP_COMMON_AGS6Q76
 
 #include "ThreadSafeFIFO.h"
+#include "log.h"
 
 typedef struct
 {
@@ -29,7 +30,7 @@ typedef struct
    uint64_t lastVideoChunkPTS;
    int lastVideoChunkPTSValid;
 
-   int testPassFail;  // 1 == pass, 0 == fail
+   int streamPassFail;  // 1 == pass, 0 == fail
 
    thread_safe_fifo_t *fifo;
 

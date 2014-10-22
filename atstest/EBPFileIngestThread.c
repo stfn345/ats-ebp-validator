@@ -33,10 +33,21 @@
 #include "EBPThreadLogging.h"
 
 
+static char *STREAM_TYPE_UNKNOWN = "UNKNOWN";
+static char *STREAM_TYPE_VIDEO = "VIDEO";
+static char *STREAM_TYPE_AUDIO = "AUDIO";
 
 static int validate_ts_packet(ts_packet_t *ts, elementary_stream_info_t *es_info, void *arg)
 {
    return 1;
+}
+
+static char* getStreamTypeDesc (elementary_stream_info_t *esi)
+{
+   if (IS_VIDEO_STREAM(esi->stream_type)) return STREAM_TYPE_VIDEO;
+   if (IS_AUDIO_STREAM(esi->stream_type)) return STREAM_TYPE_AUDIO;
+
+   return STREAM_TYPE_UNKNOWN;
 }
 
 static int validate_pes_packet(pes_packet_t *pes, elementary_stream_info_t *esi, vqarray_t *ts_queue, void *arg)
@@ -58,33 +69,46 @@ static int validate_pes_packet(pes_packet_t *pes, elementary_stream_info_t *esi,
    ebp_stream_info_t * streamInfo = ebpFileIngestThreadParams->streamInfos[fifoIndex];
    if (fifo == NULL)
    {
-      // GORP: this should never happen
+      // this should never happen
+      LOG_ERROR_ARGS("FileIngestThread %d: FAIL: Cannot find fifo for PID %d (%s)", 
+         ebpFileIngestThreadParams->threadNum, esi->elementary_PID, getStreamTypeDesc (esi));
+
+      ebpFileIngestThreadParams->filePassFail = 0;
+
       pes_free(pes);
       return 1;
    }
 
-   ebp_t* ebp = getEBP(ts);
+   ebp_t* ebp = getEBP(ts, streamInfo, ebpFileIngestThreadParams->threadNum);
    if (ebp != NULL)
    {
-         char *streamTypeDesc = "UNKNOWN";
-         if (IS_VIDEO_STREAM(esi->stream_type)) streamTypeDesc = "VIDEO";
-         if (IS_AUDIO_STREAM(esi->stream_type)) streamTypeDesc = "AUDIO";
-
-         LOG_DEBUG_ARGS("Found EBP data in transport packet: PID %d (%s)", esi->elementary_PID, streamTypeDesc);
+      LOG_DEBUG_ARGS("FileIngestThread %d: Found EBP data in transport packet: PID %d (%s)", 
+         ebpFileIngestThreadParams->threadNum, esi->elementary_PID, getStreamTypeDesc (esi));
    }
 
-   if (streamInfo->ebpImplicit && streamInfo->lastVideoChunkPTSValid)
+   if (streamInfo->ebpImplicit)
    {
       if (ebp != NULL)
       {
-         // GORP: FAIL HERE: implicit EBP, but found explicit EBP
-         pes_free(pes);
-         return 1;
+         LOG_ERROR_ARGS("FileIngestThread %d: FAIL: Explicit EBP found in implicit-EBP stream: PID %d (%s)", 
+          ebpFileIngestThreadParams->threadNum, esi->elementary_PID, getStreamTypeDesc (esi));
+
+         streamInfo->streamPassFail = 0;
       }
 
       if (streamInfo->lastVideoChunkPTSValid && pes->header.PTS > streamInfo->lastVideoChunkPTS)
       {
-         // GORP: handle implicit case
+         uint32_t sapType = 0;  // GORP: fill in
+         ebp_descriptor_t* ebpDescriptor = getEBPDescriptor (esi);  // could be null
+
+         int returnCode = postToFIFO (pes->header.PTS, sapType, ebp, ebpDescriptor, esi->elementary_PID, ebpFileIngestThreadParams);
+         if (returnCode != 0)
+         {
+            LOG_ERROR_ARGS("FileIngestThread %d: FAIL: Error posting to FIFO: PID %d (%s)", 
+               ebpFileIngestThreadParams->threadNum, esi->elementary_PID, getStreamTypeDesc (esi));
+
+            streamInfo->streamPassFail = 0;
+         }
 
          streamInfo->lastVideoChunkPTSValid = 0;
       }
@@ -96,11 +120,32 @@ static int validate_pes_packet(pes_packet_t *pes, elementary_stream_info_t *esi,
          uint32_t sapType = 0;  // GORP: fill in
          ebp_descriptor_t* ebpDescriptor = getEBPDescriptor (esi);  // could be null
 
-         postToFIFO (pes->header.PTS, sapType, ebp, ebpDescriptor, esi->elementary_PID, ebpFileIngestThreadParams);
+         int returnCode = postToFIFO (pes->header.PTS, sapType, ebp, ebpDescriptor, esi->elementary_PID, ebpFileIngestThreadParams);
+         if (returnCode != 0)
+         {
+            LOG_ERROR_ARGS("FileIngestThread %d: FAIL: Error posting to FIFO: PID %d (%s)", 
+               ebpFileIngestThreadParams->threadNum, esi->elementary_PID, getStreamTypeDesc (esi));
+
+            streamInfo->streamPassFail = 0;
+         }
 
          if (IS_VIDEO_STREAM(esi->stream_type))
          {
-            // GORP: if this is video, set lastVideoPTS in implicit fifos
+            // if this is video, set lastVideoPTS in implicit fifos
+            for (int i=0; i<ebpFileIngestThreadParams->numStreamInfos; i++)
+            {
+               if (i == fifoIndex)
+               {
+                  continue;
+               }
+
+               ebp_stream_info_t * streamInfo = ebpFileIngestThreadParams->streamInfos[i];
+               if (streamInfo->ebpImplicit)  // GORP: check implicit PID if available too
+               {
+                  streamInfo->lastVideoChunkPTS = pes->header.PTS;
+                  streamInfo->lastVideoChunkPTSValid = 1;
+               }
+            }
          }
       }
    }
@@ -109,7 +154,7 @@ static int validate_pes_packet(pes_packet_t *pes, elementary_stream_info_t *esi,
    return 1;
 }
 
-ebp_t* getEBP(ts_packet_t *ts)
+ebp_t* getEBP(ts_packet_t *ts, ebp_stream_info_t * streamInfo, int threadNum)
 {
    ebp_t* ebp = NULL;
 
@@ -131,7 +176,11 @@ ebp_t* getEBP(ts_packet_t *ts)
       {
          if (found_ebp)
          {
-            LOG_ERROR("FAIL: Multiple EBP structures detected with a single PES packet!  Not allowed!");
+            LOG_ERROR_ARGS("FileIngestThread %d: FAIL: Multiple EBP structures detected with a single PES packet: PID %d", 
+               threadNum, streamInfo->PID);
+
+            streamInfo->streamPassFail = 0;
+               
             return NULL;
          }
 
@@ -139,7 +188,11 @@ ebp_t* getEBP(ts_packet_t *ts)
 
          if (!ts->header.payload_unit_start_indicator) 
          {
-            LOG_ERROR("FAIL: EBP present on a TS packet that does not have PUSI bit set!");
+            LOG_ERROR_ARGS("FileIngestThread %d: FAIL: EBP present on a TS packet that does not have PUSI bit set: PID %d", 
+               threadNum, streamInfo->PID);
+
+            streamInfo->streamPassFail = 0;
+
             return NULL;
          }
 
@@ -147,7 +200,11 @@ ebp_t* getEBP(ts_packet_t *ts)
          ebp = ebp_new();
          if (!ebp_read(ebp, scte128))
          {
-            LOG_ERROR("FAIL: Error parsing EBP!");
+            LOG_ERROR_ARGS("FileIngestThread %d: FAIL: Error parsing EBP: PID %d", 
+               threadNum, streamInfo->PID);
+
+            streamInfo->streamPassFail = 0;
+
             return NULL;
          }
       }
@@ -175,7 +232,7 @@ ebp_descriptor_t* getEBPDescriptor (elementary_stream_info_t *esi)
 
 static int pmt_processor(mpeg2ts_program_t *m2p, void *arg)
 {
-   printf ("pmt_processor: arg = %x\n", (unsigned int) arg);
+   LOG_INFO_ARGS ("pmt_processor: arg = %x", (unsigned int) arg);
    if (m2p == NULL || m2p->pmt == NULL) // if we don't have any PSI, there's nothing we can do
       return 0;
 
@@ -250,14 +307,17 @@ void *EBPFileIngestThreadProc(void *threadParams)
    int returnCode = 0;
 
    ebp_file_ingest_thread_params_t * ebpFileIngestThreadParams = (ebp_file_ingest_thread_params_t *)threadParams;
-   printf("EBPFileIngestThread #%d starting...ebpFileIngestThreadParams = %x\n", 
+   LOG_INFO_ARGS("EBPFileIngestThread %d starting...ebpFileIngestThreadParams = %x", 
       ebpFileIngestThreadParams->threadNum, (unsigned int)ebpFileIngestThreadParams);
 
    // do file reading here
    FILE *infile = NULL;
    if ((infile = fopen(ebpFileIngestThreadParams->filePath, "rb")) == NULL)
    {
-      LOG_ERROR_ARGS("FAIL: Cannot open file %s - %s", ebpFileIngestThreadParams->filePath, strerror(errno));
+      LOG_ERROR_ARGS("EBPFileIngestThread %d: FAIL: Cannot open file %s - %s", 
+         ebpFileIngestThreadParams->threadNum, ebpFileIngestThreadParams->filePath, strerror(errno));
+
+      ebpFileIngestThreadParams->filePassFail = 0;
       cleanupAndExit(ebpFileIngestThreadParams);
    }
 
@@ -265,7 +325,9 @@ void *EBPFileIngestThreadProc(void *threadParams)
 
    if (NULL == (m2s = mpeg2ts_stream_new()))
    {
-      LOG_ERROR("Error creating MPEG-2 STREAM object");
+      LOG_ERROR_ARGS("EBPFileIngestThread %d: FAIL: Error creating MPEG-2 STREAM object",
+         ebpFileIngestThreadParams->threadNum);
+      ebpFileIngestThreadParams->filePassFail = 0;
       cleanupAndExit(ebpFileIngestThreadParams);
    }
 
@@ -277,7 +339,10 @@ void *EBPFileIngestThreadProc(void *threadParams)
    desc->read_descriptor = ebp_descriptor_read;
    if (!register_descriptor(desc))
    {
-      LOG_ERROR("Could not register EBP descriptor parser!");
+      LOG_ERROR_ARGS("EBPFileIngestThread %d: FAIL: Could not register EBP descriptor parser",
+         ebpFileIngestThreadParams->threadNum);
+      ebpFileIngestThreadParams->filePassFail = 0;
+
       cleanupAndExit(ebpFileIngestThreadParams);
    }
 
@@ -293,12 +358,13 @@ void *EBPFileIngestThreadProc(void *threadParams)
    while ((num_packets = fread(ts_buf, TS_SIZE, 4096, infile)) > 0)
    {
       total_packets += num_packets;
-      printf ("total_packets = %d, num_packets = %d\n", total_packets, num_packets);
+      LOG_DEBUG_ARGS ("total_packets = %d, num_packets = %d", total_packets, num_packets);
       for (int i = 0; i < num_packets; i++)
       {
          ts_packet_t *ts = ts_new();
          ts_read(ts, ts_buf + i * TS_SIZE, TS_SIZE);
-         mpeg2ts_stream_read_ts_packet(m2s, ts);
+         int returnCode = mpeg2ts_stream_read_ts_packet(m2s, ts);
+         // GORP: error checking here: need to augment mpeg2ts_stream_read_ts_packet's error checking
       }
    }
 
@@ -328,7 +394,7 @@ void findFIFO (uint32_t PID, ebp_stream_info_t **streamInfos, int numStreamInfos
    }
 }
 
-void postToFIFO (uint64_t PTS, uint32_t sapType, ebp_t *ebp, ebp_descriptor_t *ebpDescriptor,
+int postToFIFO  (uint64_t PTS, uint32_t sapType, ebp_t *ebp, ebp_descriptor_t *ebpDescriptor,
                  uint32_t PID, ebp_file_ingest_thread_params_t *ebpFileIngestThreadParams)
 {
    ebp_segment_info_t *ebpSegmentInfo = 
@@ -345,19 +411,24 @@ void postToFIFO (uint64_t PTS, uint32_t sapType, ebp_t *ebp, ebp_descriptor_t *e
    findFIFO (PID, ebpFileIngestThreadParams->streamInfos, ebpFileIngestThreadParams->numStreamInfos, &fifo, &fifoIndex);
    if (fifo == NULL)
    {
-      // GORP: this should never happen
-      return;
+      // this should never happen
+      LOG_ERROR_ARGS ("EBPFileIngestThread %d: FAIL: FIFO not found for PID %d", 
+         ebpFileIngestThreadParams->threadNum, PID);
+      return -1;
    }
 
-   printf ("EBPFileIngestThread (%d): POSTING PTS %"PRId64" to FIFO (PID %d)\n", ebpFileIngestThreadParams->threadNum,
-      PTS, PID);
+   LOG_INFO_ARGS ("EBPFileIngestThread %d: POSTING PTS %"PRId64" to FIFO (PID %d)", 
+      ebpFileIngestThreadParams->threadNum, PTS, PID);
    int returnCode = fifo_push (fifo, ebpSegmentInfo);
    if (returnCode != 0)
    {
-      printf ("EBPFileIngestThread (%d) error %d calling fifo_push on fifo %d (PID %d)\n", ebpFileIngestThreadParams->threadNum, 
+      LOG_ERROR_ARGS ("EBPFileIngestThread %d: FATAL error %d calling fifo_push on fifo %d (PID %d)", 
+         ebpFileIngestThreadParams->threadNum, 
          returnCode, (ebpFileIngestThreadParams->streamInfos[fifoIndex])->fifo->id, PID);
-      // GORP: do something here??
+      exit (-1);
    }
+
+   return 0;
 }
 
 void cleanupAndExit(ebp_file_ingest_thread_params_t *ebpFileIngestThreadParams)
@@ -369,12 +440,16 @@ void cleanupAndExit(ebp_file_ingest_thread_params_t *ebpFileIngestThreadParams)
       returnCode = fifo_push (ebpFileIngestThreadParams->streamInfos[i]->fifo, element);
       if (returnCode != 0)
       {
-         printThreadDebugMessage ("EBPFileIngestThread #%d error %d calling fifo_push\n", ebpFileIngestThreadParams->threadNum, returnCode);
-         // GORP: do something here??
+         LOG_ERROR_ARGS ("EBPFileIngestThread %d: FATAL error %d calling fifo_push on fifo %d (PID %d) during cleanup", 
+            ebpFileIngestThreadParams->threadNum, returnCode, 
+            (ebpFileIngestThreadParams->streamInfos[i])->fifo->id, (ebpFileIngestThreadParams->streamInfos[i])->PID);
+
+         // fatal error: exit
+         exit(-1);
       }
    }
 
-   printThreadDebugMessage("EBPFileIngestThread #%d exiting...\n", ebpFileIngestThreadParams->threadNum);
+   LOG_INFO_ARGS ("EBPFileIngestThread %d exiting...", ebpFileIngestThreadParams->threadNum);
    free (ebpFileIngestThreadParams);
    pthread_exit(NULL);
 }
