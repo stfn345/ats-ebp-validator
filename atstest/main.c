@@ -7,7 +7,7 @@
 #include <ebp.h>
 #include <pthread.h>
 
-#include "ThreadSafeFIFO.h"
+#include "EBPCommon.h"
 #include "EBPFileIngestThread.h"
 #include "EBPSegmentAnalysisThread.h"
 
@@ -15,7 +15,7 @@
 
 static int g_bPATFound = 0;
 static int g_bPMTFound = 0;
-
+static int g_numVideoChunksFound = 0;
 
 typedef struct
 {
@@ -50,7 +50,6 @@ static int pat_processor(mpeg2ts_stream_t *m2s, void *arg)
    }
    return 1;
 }
-
 
 int prereadFiles(int numFiles, char **fileNames, program_stream_info_t *programStreamInfo)
 {
@@ -138,7 +137,7 @@ int get2DArrayIndex (int fileIndex, int streamIndex, int numStreams)
    return fileIndex * numStreams + streamIndex;
 }
 
-int teardownQueues(int numFiles, int numStreams, thread_safe_fifo_t **fifoArray)
+int teardownQueues(int numFiles, int numStreams, ebp_stream_info_t **streamInfoArray)
 {
    printf ("teardownQueues: entering\n");
    int returnCode = 0;
@@ -148,30 +147,31 @@ int teardownQueues(int numFiles, int numStreams, thread_safe_fifo_t **fifoArray)
       for (int streamIndex=0; streamIndex < numStreams; streamIndex++)
       {
          int arrayIndex = get2DArrayIndex (fileIndex, streamIndex, numStreams);
-         thread_safe_fifo_t *fifo = fifoArray[arrayIndex];
+         ebp_stream_info_t *streamInfo = streamInfoArray[arrayIndex];
 
          printf ("teardownQueues: fifo (file_index = %d, streamIndex = %d, PID = %d) push_counter = %d, pop_counter = %d\n", 
-            fileIndex, streamIndex, fifo->PID, fifo->push_counter, fifo->pop_counter);
+            fileIndex, streamIndex, streamInfo->PID, streamInfo->fifo->push_counter, streamInfo->fifo->pop_counter);
          printf ("teardownQueues: arrayIndex = %d: calling fifo_destroy: fifo = %x\n", arrayIndex,
-            (unsigned int)fifo);
-         returnCode = fifo_destroy (fifo);
+            (unsigned int)streamInfo->fifo);
+         returnCode = fifo_destroy (streamInfo->fifo);
          if (returnCode != 0)
          {
-            printf ("setupQueues: error destroying queue\n");
+            printf ("teardownQueues: error destroying queue\n");
          }
 
-         free (fifo);
+         free (streamInfo->fifo);
+         free (streamInfo);
       }
    }
 
-   free (fifoArray);
+   free (streamInfoArray);
 
    printf ("teardownQueues: exiting\n");
    return 0;
 }
 
 int setupQueues(int numFiles, char **fileNames, program_stream_info_t *programStreamInfo,
-                thread_safe_fifo_t ***fifoArray, int *totalNumStreams)
+                ebp_stream_info_t ***streamInfoArray, int *numStreamsPerFile)
 {
    printf ("setupQueues: entering\n");
 
@@ -187,32 +187,38 @@ int setupQueues(int numFiles, char **fileNames, program_stream_info_t *programSt
    // just assume that all files have the same audio streams
    
    int numStreams = programStreamInfo[0].numStreams;
-   *totalNumStreams = numStreams;
+   *numStreamsPerFile = numStreams;
 
-   // *fifoArray is an array of fifo pointers, not fifos.  this way, if a particular fifo is not
-   // needed for a file, that fifo pointer can be left null
-   *fifoArray = (thread_safe_fifo_t **) calloc (numFiles * numStreams, sizeof (thread_safe_fifo_t*));
+   // *streamInfoArray is an array of stream_info pointers, not stream_infos.  this way, if a particular stream_info is not
+   // needed for a file, that stream_info pointer can be left null
+   *streamInfoArray = (ebp_stream_info_t **) calloc (numFiles * numStreams, sizeof (ebp_stream_info_t*));
 
    for (int fileIndex=0; fileIndex < numFiles; fileIndex++)
    {
       for (int streamIndex=0; streamIndex < numStreams; streamIndex++)
       {
          int arrayIndex = get2DArrayIndex (fileIndex, streamIndex, numStreams);
-         (*fifoArray)[arrayIndex] = (thread_safe_fifo_t *)calloc (1, sizeof (thread_safe_fifo_t));
-         thread_safe_fifo_t *fifo = (*fifoArray)[arrayIndex];
+         (*streamInfoArray)[arrayIndex] = (ebp_stream_info_t *)calloc (1, sizeof (ebp_stream_info_t));
+         ebp_stream_info_t *streamInfo = (*streamInfoArray)[arrayIndex];
 
-         printf ("setupQueues: arrayIndex = %d: calling fifo_create: fifo = %x\n", arrayIndex,
-            (unsigned int)fifo);
-         returnCode = fifo_create (fifo, fileIndex);
+         streamInfo->fifo = (thread_safe_fifo_t *)calloc (1, sizeof (thread_safe_fifo_t));
+
+         printf ("setupQueues: arrayIndex = %d: calling fifo_create: fifo = %x\n", arrayIndex, (unsigned int)streamInfo->fifo);
+         returnCode = fifo_create (streamInfo->fifo, fileIndex);
          if (returnCode != 0)
          {
             printf ("setupQueues: error creating queue\n");
             return -1;
          }
 
-         fifo->PID = ((programStreamInfo[fileIndex]).PIDs)[streamIndex];
+         streamInfo->PID = ((programStreamInfo[fileIndex]).PIDs)[streamIndex];
          uint32_t streamType = ((programStreamInfo[fileIndex]).stream_types)[streamIndex];
-         fifo->isVideo = IS_VIDEO_STREAM(streamType);
+         streamInfo->isVideo = IS_VIDEO_STREAM(streamType);
+         streamInfo->ebpImplicit = 0;  // explicit
+         streamInfo->ebpImplicitPID = 0;
+         streamInfo->lastVideoChunkPTS = 0;
+         streamInfo->lastVideoChunkPTSValid = 0;
+         streamInfo->testPassFail = 1;
       }
    }
 
@@ -220,7 +226,7 @@ int setupQueues(int numFiles, char **fileNames, program_stream_info_t *programSt
    return 0;
 }
 
-int startThreads(int numFiles, int totalNumStreams, thread_safe_fifo_t **fifoArray, char **fileNames,
+int startThreads(int numFiles, int totalNumStreams, ebp_stream_info_t **streamInfoArray, char **fileNames,
    pthread_t ***fileIngestThreads, pthread_t ***analysisThreads, pthread_attr_t *threadAttr)
 {
    printf ("startThreads: entering\n");
@@ -239,19 +245,19 @@ int startThreads(int numFiles, int totalNumStreams, thread_safe_fifo_t **fifoArr
    *analysisThreads = (pthread_t **) calloc (totalNumStreams, sizeof(pthread_t*));
    for (int threadIndex = 0; threadIndex < totalNumStreams; threadIndex++)
    {
-      // GORP: free these somewhere
-      thread_safe_fifo_t **fifos = (thread_safe_fifo_t **)calloc(numFiles, sizeof (thread_safe_fifo_t*));
+      // this is freed by the analysis thread when it exits
+      ebp_stream_info_t **streamInfos = (ebp_stream_info_t **)calloc(numFiles, sizeof (ebp_stream_info_t*));
       for (int i=0; i<numFiles; i++)
       {
          int arrayIndex = get2DArrayIndex (i, threadIndex, totalNumStreams);
 
-         fifos[i] = fifoArray[arrayIndex];
+         streamInfos[i] = streamInfoArray[arrayIndex];
       }
       
-      EBPSegmentAnalysisThreadParams *ebpSegmentAnalysisThreadParams = (EBPSegmentAnalysisThreadParams *)malloc (sizeof(EBPSegmentAnalysisThreadParams));
+      ebp_segment_analysis_thread_params_t *ebpSegmentAnalysisThreadParams = (ebp_segment_analysis_thread_params_t *)malloc (sizeof(ebp_segment_analysis_thread_params_t));
       ebpSegmentAnalysisThreadParams->threadID = 100 + threadIndex;
-      ebpSegmentAnalysisThreadParams->numFifos = numFiles;
-      ebpSegmentAnalysisThreadParams->fifos = fifos;
+      ebpSegmentAnalysisThreadParams->numStreamInfos = numFiles;
+      ebpSegmentAnalysisThreadParams->streamInfos = streamInfos;
 
       (*analysisThreads)[threadIndex] = (pthread_t *)malloc (sizeof (pthread_t));
       pthread_t *analyzerThread = (*analysisThreads)[threadIndex];
@@ -271,15 +277,15 @@ int startThreads(int numFiles, int totalNumStreams, thread_safe_fifo_t **fifoArr
    {
       int arrayIndex = get2DArrayIndex (threadIndex, 0, totalNumStreams);
       printf ("arrayindex = %d\n", arrayIndex);
-      thread_safe_fifo_t **fifos = &(fifoArray[arrayIndex]);
+      ebp_stream_info_t **streamInfos = &(streamInfoArray[arrayIndex]);
        
-      printf ("fifos = %x\n", (unsigned int)fifos);
-      printf ("fifos[0]->PID = %d\n", fifos[0]->PID);
+      printf ("streamInfos = %x\n", (unsigned int)streamInfos);
+      printf ("streamInfos[0]->PID = %d\n", streamInfos[0]->PID);
       
-      EBPFileIngestThreadParams *ebpFileIngestThreadParams = (EBPFileIngestThreadParams *)malloc (sizeof(EBPFileIngestThreadParams));
+      ebp_file_ingest_thread_params_t *ebpFileIngestThreadParams = (ebp_file_ingest_thread_params_t *)malloc (sizeof(ebp_file_ingest_thread_params_t));
       ebpFileIngestThreadParams->threadNum = threadIndex;
-      ebpFileIngestThreadParams->numFifos = totalNumStreams;
-      ebpFileIngestThreadParams->fifos = fifos;
+      ebpFileIngestThreadParams->numStreamInfos = totalNumStreams;
+      ebpFileIngestThreadParams->streamInfos = streamInfos;
       ebpFileIngestThreadParams->filePath = fileNames[threadIndex];
 
       (*fileIngestThreads)[threadIndex] = (pthread_t *)malloc (sizeof (pthread_t));
@@ -354,23 +360,24 @@ int main(int argc, char** argv)
 
    prereadFiles(numFiles, &argv[1], programStreamInfo);
 
+
    // array of fifo pointers
-   thread_safe_fifo_t **fifoArray = NULL;
-   int totalNumStreams;
-   setupQueues(numFiles, &argv[1], programStreamInfo, &fifoArray, &totalNumStreams);
+   ebp_stream_info_t **streamInfoArray = NULL;
+   int numStreamsPerFile;
+   setupQueues(numFiles, &argv[1], programStreamInfo, &streamInfoArray, &numStreamsPerFile);
 
    pthread_t **fileIngestThreads;
    pthread_t **analysisThreads;
    pthread_attr_t threadAttr;
 
-   startThreads(numFiles, totalNumStreams, fifoArray, &argv[1],
+   startThreads(numFiles, numStreamsPerFile, streamInfoArray, &argv[1],
       &fileIngestThreads, &analysisThreads, &threadAttr);
 
 
-   waitForThreadsToExit(numFiles, totalNumStreams, fileIngestThreads, analysisThreads, &threadAttr);
+   waitForThreadsToExit(numFiles, numStreamsPerFile, fileIngestThreads, analysisThreads, &threadAttr);
 
    printf ("Calling teardownQueues\n");
-   teardownQueues(numFiles, totalNumStreams, fifoArray);
+   teardownQueues(numFiles, numStreamsPerFile, streamInfoArray);
 
    pthread_exit(NULL);
 

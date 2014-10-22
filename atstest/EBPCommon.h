@@ -15,34 +15,25 @@
  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef __H_EBPSEGMENTANALYSISTHREAD_67511FLKKJF
-#define __H_EBPSEGMENTANALYSISTHREAD_67511FLKKJF
+#ifndef __H_EBP_COMMON_AGS6Q76
+#define __H_EBP_COMMON_AGS6Q76
 
-#include "EBPCommon.h"
-
-typedef struct 
-{  
-   int threadID;  // GORP: put these in debug statements
-   int numStreamInfos;
-//   thread_safe_fifo_t **fifos;
-   ebp_stream_info_t **streamInfos;
-
-} ebp_segment_analysis_thread_params_t;
+#include "ThreadSafeFIFO.h"
 
 typedef struct
 {
-   int64_t PTS;
-   uint32_t SAPType;
+   uint32_t PID;  // PID within program for this fifo
+   int isVideo; // =1 if this fifo carries video info, =0 if audio
+   int ebpImplicit;  // = 0 if the chunks are marked by explicit EBP, =1 if marked implicitly
+   uint32_t ebpImplicitPID;  // if != 0, then has the PID for implicit EBP, else =0 for no PID
+   uint64_t lastVideoChunkPTS;
+   int lastVideoChunkPTSValid;
 
-   ebp_t *EBP;
-   ebp_descriptor_t *latestEBPDescriptor;  // GORP: may need to copy this else ingest code frees it?
+   int testPassFail;  // 1 == pass, 0 == fail
 
-} ebp_segment_info_t;
+   thread_safe_fifo_t *fifo;
 
-
-void cleanupEBPSegmentInfo (ebp_segment_info_t *ebpSegmentInfo);
-void *EBPSegmentAnalysisThreadProc(void *threadParams);
-int syncIncomingStreams (int threadID, int numStreamInfos, ebp_stream_info_t **streamInfos, int *fifoNotActive);
+} ebp_stream_info_t;
 
 
-#endif  // __H_EBPSEGMENTANALYSISTHREAD_67511FLKKJF
+#endif  // __H_EBP_COMMON_AGS6Q76

@@ -43,19 +43,86 @@ static int validate_pes_packet(pes_packet_t *pes, elementary_stream_info_t *esi,
 {
    // Get the first TS packet and check it for EBP
    ts_packet_t *ts = (ts_packet_t*)vqarray_get(ts_queue,0);
-
-   vqarray_t *scte128_data;
-   if (ts == NULL || !TS_HAS_ADAPTATION_FIELD(*ts) ||
-         (scte128_data = ts->adaptation_field.scte128_private_data) == NULL ||
-         vqarray_length(scte128_data) == 0)
+   if (ts == NULL)
    {
       pes_free(pes);
       return 1; // Don't care about this packet
    }
+         
+   ebp_file_ingest_thread_params_t *ebpFileIngestThreadParams = (ebp_file_ingest_thread_params_t *)arg;
+
+   thread_safe_fifo_t *fifo = NULL;
+   int fifoIndex = -1;
+   findFIFO (esi->elementary_PID, ebpFileIngestThreadParams->streamInfos, ebpFileIngestThreadParams->numStreamInfos,
+      &fifo, &fifoIndex);
+   ebp_stream_info_t * streamInfo = ebpFileIngestThreadParams->streamInfos[fifoIndex];
+   if (fifo == NULL)
+   {
+      // GORP: this should never happen
+      pes_free(pes);
+      return 1;
+   }
+
+   ebp_t* ebp = getEBP(ts);
+   if (ebp != NULL)
+   {
+         char *streamTypeDesc = "UNKNOWN";
+         if (IS_VIDEO_STREAM(esi->stream_type)) streamTypeDesc = "VIDEO";
+         if (IS_AUDIO_STREAM(esi->stream_type)) streamTypeDesc = "AUDIO";
+
+         LOG_DEBUG_ARGS("Found EBP data in transport packet: PID %d (%s)", esi->elementary_PID, streamTypeDesc);
+   }
+
+   if (streamInfo->ebpImplicit && streamInfo->lastVideoChunkPTSValid)
+   {
+      if (ebp != NULL)
+      {
+         // GORP: FAIL HERE: implicit EBP, but found explicit EBP
+         pes_free(pes);
+         return 1;
+      }
+
+      if (streamInfo->lastVideoChunkPTSValid && pes->header.PTS > streamInfo->lastVideoChunkPTS)
+      {
+         // GORP: handle implicit case
+
+         streamInfo->lastVideoChunkPTSValid = 0;
+      }
+   }
+   else if (!streamInfo->ebpImplicit)
+   {
+      if (ebp != NULL)
+      {
+         uint32_t sapType = 0;  // GORP: fill in
+         ebp_descriptor_t* ebpDescriptor = getEBPDescriptor (esi);  // could be null
+
+         postToFIFO (pes->header.PTS, sapType, ebp, ebpDescriptor, esi->elementary_PID, ebpFileIngestThreadParams);
+
+         if (IS_VIDEO_STREAM(esi->stream_type))
+         {
+            // GORP: if this is video, set lastVideoPTS in implicit fifos
+         }
+      }
+   }
+
+   pes_free(pes);
+   return 1;
+}
+
+ebp_t* getEBP(ts_packet_t *ts)
+{
+   ebp_t* ebp = NULL;
+
+   vqarray_t *scte128_data;
+   if (!TS_HAS_ADAPTATION_FIELD(*ts) ||
+         (scte128_data = ts->adaptation_field.scte128_private_data) == NULL ||
+         vqarray_length(scte128_data) == 0)
+   {
+      return NULL;
+   }
 
    int found_ebp = 0;
-   for (vqarray_iterator_t *it = vqarray_iterator_new(scte128_data);
-         vqarray_iterator_has_next(it);)
+   for (vqarray_iterator_t *it = vqarray_iterator_new(scte128_data); vqarray_iterator_has_next(it);)
    {
       ts_scte128_private_data_t *scte128 = (ts_scte128_private_data_t*)vqarray_iterator_next(it);
 
@@ -64,43 +131,31 @@ static int validate_pes_packet(pes_packet_t *pes, elementary_stream_info_t *esi,
       {
          if (found_ebp)
          {
-            LOG_ERROR("Multiple EBP structures detected with a single PES packet!  Not allowed!");
-            return 0;
+            LOG_ERROR("FAIL: Multiple EBP structures detected with a single PES packet!  Not allowed!");
+            return NULL;
          }
 
-         char *streamTypeDesc = "UNKNOWN";
-         if (IS_VIDEO_STREAM(esi->stream_type)) streamTypeDesc = "VIDEO";
-         if (IS_AUDIO_STREAM(esi->stream_type)) streamTypeDesc = "AUDIO";
-
-         LOG_DEBUG_ARGS("Found EBP data in transport packet: PID %d (%s)", esi->elementary_PID, streamTypeDesc);
          found_ebp = 1;
 
-         if (!ts->header.payload_unit_start_indicator) {
-            LOG_ERROR("EBP present on a TS packet that does not have PUSI bit set!");
-            return 0;
+         if (!ts->header.payload_unit_start_indicator) 
+         {
+            LOG_ERROR("FAIL: EBP present on a TS packet that does not have PUSI bit set!");
+            return NULL;
          }
 
          // Parse the EBP
-         ebp_t *ebp = ebp_new();
+         ebp = ebp_new();
          if (!ebp_read(ebp, scte128))
          {
-            LOG_ERROR("Error parsing EBP!");
-            return 0;
+            LOG_ERROR("FAIL: Error parsing EBP!");
+            return NULL;
          }
- //        ebp_print_stdout(ebp);
-
-         // GORP: test this -- print value of arg
-         EBPFileIngestThreadParams *ebpFileIngestThreadParams = (EBPFileIngestThreadParams *)arg;
-         uint32_t sapType = 0;  // GORP: fill in
-         ebp_descriptor_t* ebpDescriptor = getEBPDescriptor (esi);
-
- //        printf ("EBPFileIngestThread (%d): Posting to FIFO\n", ebpFileIngestThreadParams->threadNum);
-         postToFIFO (pes->header.PTS, sapType, ebp, ebpDescriptor, esi->elementary_PID, ebpFileIngestThreadParams);
       }
    }
 
-   return 1;
+   return ebp;
 }
+
 
 ebp_descriptor_t* getEBPDescriptor (elementary_stream_info_t *esi)
 {
@@ -190,19 +245,11 @@ static int pat_processor(mpeg2ts_stream_t *m2s, void *arg)
    return 1;
 }
 
-descriptor_t* ebp_descriptor_read_wrapper(descriptor_t *desc, bs_t *b)
-{
-   // need this here so we can save the last descriptor
-
-   // GORP: how do we tell what stream this was called on?
-   return ebp_descriptor_read(desc, b);
-}
-
 void *EBPFileIngestThreadProc(void *threadParams)
 {
    int returnCode = 0;
 
-   EBPFileIngestThreadParams * ebpFileIngestThreadParams = (EBPFileIngestThreadParams *)threadParams;
+   ebp_file_ingest_thread_params_t * ebpFileIngestThreadParams = (ebp_file_ingest_thread_params_t *)threadParams;
    printf("EBPFileIngestThread #%d starting...ebpFileIngestThreadParams = %x\n", 
       ebpFileIngestThreadParams->threadNum, (unsigned int)ebpFileIngestThreadParams);
 
@@ -210,7 +257,7 @@ void *EBPFileIngestThreadProc(void *threadParams)
    FILE *infile = NULL;
    if ((infile = fopen(ebpFileIngestThreadParams->filePath, "rb")) == NULL)
    {
-      LOG_ERROR_ARGS("Cannot open file %s - %s", ebpFileIngestThreadParams->filePath, strerror(errno));
+      LOG_ERROR_ARGS("FAIL: Cannot open file %s - %s", ebpFileIngestThreadParams->filePath, strerror(errno));
       cleanupAndExit(ebpFileIngestThreadParams);
    }
 
@@ -264,11 +311,28 @@ void *EBPFileIngestThreadProc(void *threadParams)
    return NULL;
 }
 
-void postToFIFO (uint64_t PTS, uint32_t sapType, ebp_t *ebp, ebp_descriptor_t *ebpDescriptor,
-                 uint32_t PID, EBPFileIngestThreadParams *ebpFileIngestThreadParams)
+void findFIFO (uint32_t PID, ebp_stream_info_t **streamInfos, int numStreamInfos,
+   thread_safe_fifo_t**fifoOut, int *fifoIndex)
 {
-   EBPSegmentInfo *ebpSegmentInfo = 
-      (EBPSegmentInfo *)malloc (sizeof (EBPSegmentInfo));
+   *fifoOut = NULL;
+   *fifoIndex = -1;
+
+   for (int i=0; i<numStreamInfos; i++)
+   {
+      if (PID == streamInfos[i]->PID)
+      {
+         *fifoOut = streamInfos[i]->fifo;
+         *fifoIndex = i;
+         return;
+      }
+   }
+}
+
+void postToFIFO (uint64_t PTS, uint32_t sapType, ebp_t *ebp, ebp_descriptor_t *ebpDescriptor,
+                 uint32_t PID, ebp_file_ingest_thread_params_t *ebpFileIngestThreadParams)
+{
+   ebp_segment_info_t *ebpSegmentInfo = 
+      (ebp_segment_info_t *)malloc (sizeof (ebp_segment_info_t));
 
    ebpSegmentInfo->PTS = PTS;
    ebpSegmentInfo->SAPType = sapType;
@@ -276,32 +340,33 @@ void postToFIFO (uint64_t PTS, uint32_t sapType, ebp_t *ebp, ebp_descriptor_t *e
    // make a copy of ebp_descriptor since this mem could be freed before being prcessed by analysis thread
    ebpSegmentInfo->latestEBPDescriptor = ebp_descriptor_copy(ebpDescriptor);  
    
-   for (int i=0; i<ebpFileIngestThreadParams->numFifos; i++)
+   thread_safe_fifo_t* fifo = NULL;
+   int fifoIndex = -1;
+   findFIFO (PID, ebpFileIngestThreadParams->streamInfos, ebpFileIngestThreadParams->numStreamInfos, &fifo, &fifoIndex);
+   if (fifo == NULL)
    {
-      if (PID == ((ebpFileIngestThreadParams->fifos)[i])->PID)
-      {
-         printf ("EBPFileIngestThread (%d): POSTING PTS %"PRId64" to FIFO %d (PID %d)\n", ebpFileIngestThreadParams->threadNum,
-            PTS, i, PID);
-         int returnCode = fifo_push (ebpFileIngestThreadParams->fifos[i], ebpSegmentInfo);
-         if (returnCode != 0)
-         {
-            printf ("EBPFileIngestThread (%d) error %d calling fifo_push on fifo %d (PID %d)\n", ebpFileIngestThreadParams->threadNum, 
-               returnCode, i, PID);
-            // GORP: do something here??
-         }
+      // GORP: this should never happen
+      return;
+   }
 
-         break;
-      }
+   printf ("EBPFileIngestThread (%d): POSTING PTS %"PRId64" to FIFO (PID %d)\n", ebpFileIngestThreadParams->threadNum,
+      PTS, PID);
+   int returnCode = fifo_push (fifo, ebpSegmentInfo);
+   if (returnCode != 0)
+   {
+      printf ("EBPFileIngestThread (%d) error %d calling fifo_push on fifo %d (PID %d)\n", ebpFileIngestThreadParams->threadNum, 
+         returnCode, (ebpFileIngestThreadParams->streamInfos[fifoIndex])->fifo->id, PID);
+      // GORP: do something here??
    }
 }
 
-void cleanupAndExit(EBPFileIngestThreadParams *ebpFileIngestThreadParams)
+void cleanupAndExit(ebp_file_ingest_thread_params_t *ebpFileIngestThreadParams)
 {
    int returnCode = 0;
    void *element = NULL;
-   for (int i=0; i<ebpFileIngestThreadParams->numFifos; i++)
+   for (int i=0; i<ebpFileIngestThreadParams->numStreamInfos; i++)
    {
-      returnCode = fifo_push (ebpFileIngestThreadParams->fifos[i], element);
+      returnCode = fifo_push (ebpFileIngestThreadParams->streamInfos[i]->fifo, element);
       if (returnCode != 0)
       {
          printThreadDebugMessage ("EBPFileIngestThread #%d error %d calling fifo_push\n", ebpFileIngestThreadParams->threadNum, returnCode);

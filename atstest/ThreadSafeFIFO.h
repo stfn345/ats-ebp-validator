@@ -23,9 +23,7 @@
 
 typedef struct
 {
-   int id;  // thread ID
-   uint32_t PID;  // PID within program for this fifo
-   int isVideo;
+   int id;  // ID to uniquely tag this fifo
 
    varray_t* queue;
 
@@ -42,7 +40,12 @@ int fifo_create (thread_safe_fifo_t *fifo, int id);
 int fifo_destroy (thread_safe_fifo_t *fifo);
 int fifo_push (thread_safe_fifo_t *fifo, void *element);
 int fifo_pop (thread_safe_fifo_t *fifo, void **element);
+int fifo_peek (thread_safe_fifo_t *fifo, void **element);
 int fifo_get_state (thread_safe_fifo_t *fifo, int *size);
+
+// intternal methods
+int fifo_pop_peek (thread_safe_fifo_t *fifo, void **element, int isPop);
+
 
 
 #endif // __H_THREAD_SAFE_FIFO_LLIH876JHG221

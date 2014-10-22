@@ -24,15 +24,18 @@ typedef struct
 {
     int threadNum;
     char *filePath;
-    int numFifos;
-    thread_safe_fifo_t **fifos;
+    int numStreamInfos;
+    ebp_stream_info_t **streamInfos;
 
-} EBPFileIngestThreadParams;
+} ebp_file_ingest_thread_params_t;
 
-void cleanupAndExit(EBPFileIngestThreadParams *ebpFileIngestThreadParams);
+void cleanupAndExit(ebp_file_ingest_thread_params_t *ebpFileIngestThreadParams);
 void postToFIFO (uint64_t PTS, uint32_t sapType, ebp_t *ebp, ebp_descriptor_t *ebpDescriptor,
-                 uint32_t PID, EBPFileIngestThreadParams *ebpFileIngestThreadParams);
+                 uint32_t PID, ebp_file_ingest_thread_params_t *ebpFileIngestThreadParams);
 ebp_descriptor_t* getEBPDescriptor (elementary_stream_info_t *esi);
+void findFIFO (uint32_t PID, ebp_stream_info_t **streamInfos, int numStreamInfos,
+   thread_safe_fifo_t**fifoOut, int *fifoIndex);
+ebp_t* getEBP(ts_packet_t *ts);
 
 void *EBPFileIngestThreadProc(void *threadParams);
 

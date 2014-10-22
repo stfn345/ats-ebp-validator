@@ -130,8 +130,8 @@ static descriptor_t* ebp_descriptor_new(descriptor_t *desc)
 
 int ebp_descriptor_free(descriptor_t *desc)
 {
-   printf ("ebp_descriptor_free: %x\n", (unsigned int)desc);
-   if (desc == ebp_descriptor_free) return 0;
+//   printf ("ebp_descriptor_free: %x\n", (unsigned int)desc);
+   if (desc == NULL) return 0;
    if (desc->tag != EBP_DESCRIPTOR) return 0;
 
     ebp_descriptor_t *ebp = (ebp_descriptor_t *)desc;
@@ -160,7 +160,7 @@ descriptor_t* ebp_descriptor_read(descriptor_t *desc, bs_t *b)
 
    ebp_descriptor_t *ebp =
          (ebp_descriptor_t *)ebp_descriptor_new(desc);
-   printf ("ebp_descriptor_read: %x\n", (unsigned int)ebp);
+//   printf ("ebp_descriptor_read: %x\n", (unsigned int)ebp);
 
    ebp->num_partitions = bs_read_u(b, 5);
    ebp->timescale_flag = bs_read_u1(b);
@@ -240,7 +240,7 @@ ebp_descriptor_t* ebp_descriptor_copy(const ebp_descriptor_t *ebp_in)
 
    ebp_descriptor_t *ebp = (ebp_descriptor_t *)calloc(1, sizeof(ebp_descriptor_t));
    
-   printf ("ebp_descriptor_copy: from %x to %x\n", (unsigned int)ebp_in, (unsigned int)ebp);
+ //  printf ("ebp_descriptor_copy: from %x to %x\n", (unsigned int)ebp_in, (unsigned int)ebp);
    ebp->descriptor.tag = EBP_DESCRIPTOR;
    ebp->descriptor.length = ebp_in->descriptor.length;
 

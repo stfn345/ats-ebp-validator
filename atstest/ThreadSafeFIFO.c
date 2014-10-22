@@ -113,51 +113,71 @@ int fifo_push (thread_safe_fifo_t *fifo, void *element)
 
 int fifo_pop (thread_safe_fifo_t *fifo, void **element)
 {
+   return fifo_pop_peek (fifo, element, 1 /* isPop */);
+}
+
+int fifo_peek (thread_safe_fifo_t *fifo, void **element)
+{
+   return fifo_pop_peek (fifo, element, 0 /* isPop */);
+}
+
+int fifo_pop_peek (thread_safe_fifo_t *fifo, void **element, int isPop)
+{
    int returnCode = 0;
-   printThreadDebugMessage ("fifo_pop (%d): entering...\n", fifo->id);
+
+   printThreadDebugMessage ("fifo_pop_peek (%d): entering...\n", fifo->id);
 
    returnCode = pthread_mutex_lock (&(fifo->fifo_mutex));
    if (returnCode != 0)
    {
-      printThreadDebugMessage ("fifo_pop (%d): error %d calling pthread_mutex_lock\n", fifo->id, returnCode);
+      printThreadDebugMessage ("fifo_pop_peek (%d): error %d calling pthread_mutex_lock\n", fifo->id, returnCode);
       return -1;
    }
 
-   printThreadDebugMessage ("fifo_pop (%d): doing pop\n", fifo->id);
+   printThreadDebugMessage ("fifo_pop_peek (%d): doing pop\n", fifo->id);
 
    // check queue not empty here
    if (varray_length(fifo->queue) != 0)
    {
-      printThreadDebugMessage ("fifo_pop (%d): queue not empty -- fifo_pop setting element\n", fifo->id);
+      printThreadDebugMessage ("fifo_pop_peek (%d): queue not empty -- fifo_pop setting element\n", fifo->id);
    }
    else
    {
-      printThreadDebugMessage ("fifo_pop (%d): queue empty -- pop entering wait\n", fifo->id);
+      printThreadDebugMessage ("fifo_pop_peek (%d): queue empty -- pop entering wait\n", fifo->id);
       returnCode = pthread_cond_wait(&(fifo->fifo_nonempty_cond), &(fifo->fifo_mutex));
       if (returnCode != 0)
       {
-         printThreadDebugMessage ("fifo_pop (%d): error %d calling pthread_cond_signal\n", fifo->id, returnCode);
+         printThreadDebugMessage ("fifo_pop_peek (%d): error %d calling pthread_cond_signal\n", fifo->id, returnCode);
          // unlock mutex before returning
          pthread_mutex_unlock (&(fifo->fifo_mutex));
          return -1;
       }
 
-      printThreadDebugMessage ("fifo_pop (%d): setting element -- 2\n", fifo->id);
    }
 
-   *element = varray_pop(fifo->queue);
-   fifo->pop_counter++;
-   printThreadDebugMessage ("fifo_pop (%d): setting element: *element = %x\n", fifo->id, (unsigned int)(*element));
+   if (isPop)
+   {
+      printThreadDebugMessage ("fifo_pop_peek (%d): calling varray_pop\n", fifo->id);
+      *element = varray_pop(fifo->queue);
+      fifo->pop_counter++;
+   }
+   else
+   {
+      printThreadDebugMessage ("fifo_pop_peek (%d): calling varray_peek\n", fifo->id);
+      *element = varray_peek(fifo->queue);
+   }
 
-   printThreadDebugMessage ("fifo_pop (%d): calling pthread_mutex_unlock\n", fifo->id);
+   printThreadDebugMessage ("fifo_pop_peek (%d): setting element: *element = %x\n", fifo->id, (unsigned int)(*element));
+
+   printThreadDebugMessage ("fifo_pop_peek (%d): calling pthread_mutex_unlock\n", fifo->id);
    returnCode = pthread_mutex_unlock (&(fifo->fifo_mutex));
    if (returnCode != 0)
    {
-      printThreadDebugMessage ("fifo_pop (%d): Error %d calling pthread_mutex_unlock\n", fifo->id, returnCode);
+      printThreadDebugMessage ("fifo_pop_peek (%d): Error %d calling pthread_mutex_unlock\n", fifo->id, returnCode);
       return -1;
    }
 
-   printThreadDebugMessage ("fifo_pop (%d): exiting\n", fifo->id);
+   printThreadDebugMessage ("fifo_pop_peek (%d): exiting\n", fifo->id);
    return 0;
 }
 
