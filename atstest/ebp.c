@@ -76,6 +76,94 @@ int ebp_read(ebp_t *ebp, ts_scte128_private_data_t *scte128)
    return 1;
 }
 
+int ebp_validate_groups(const ebp_t *ebp)
+{
+   // GroupId range:
+   //    0: default
+   //    1-31: private
+   //    35: Ad insertion
+   //    126: start
+   //    127: end
+   
+   // For start, group Id is followed by 126; for end it is followed by 127; could
+   // be followed by both 126 and 127.
+   //
+   // except for 126/127, group id cannot appear more than once
+   //
+   // groupid does not require associated 126 or 127
+
+
+   // check range of each group id
+   // check that no group ids are present more than once
+   // check that every 126 is preceded by another groupid
+   // check that every 127 is preceded by either 126 or another groupid
+
+   int returnCode = 0;
+
+   if (ebp->ebp_grouping_flag == 0)
+   {
+      return returnCode;
+   }
+
+   // first, check for grouping id duplicates
+   for (int i=0; i<vqarray_length (ebp->ebp_grouping_ids); i++)
+   {
+      uint32_t grouping_id_i = *((uint32_t *) vqarray_get (ebp->ebp_grouping_ids, i));
+
+      for (int j=0; j<vqarray_length (ebp->ebp_grouping_ids); j++)
+      {
+         if (i==j) continue;
+      
+         uint32_t grouping_id_j = *((uint32_t *) vqarray_get (ebp->ebp_grouping_ids, i));
+
+         if (grouping_id_i == grouping_id_j)
+         {
+            LOG_ERROR_ARGS ("ebp_validate_groups: FAIL: duplicate group id %d detected", grouping_id_i);
+            returnCode = -1;
+         }
+      }
+   }
+
+
+   for (int i=0; i<vqarray_length (ebp->ebp_grouping_ids); i++)
+   {
+      uint32_t grouping_id = *((uint32_t *) vqarray_get (ebp->ebp_grouping_ids, i));
+
+      if (grouping_id == 126)
+      {
+         if (i == 0)
+         {
+            LOG_ERROR ("ebp_validate_groups: FAIL: orphan group id 126 detected (1)");
+            returnCode = -1;
+         }
+
+         uint32_t previous_grouping_id = *((uint32_t *) vqarray_get (ebp->ebp_grouping_ids, i-1));
+         if (previous_grouping_id == 126 || previous_grouping_id == 127)
+         {
+            LOG_ERROR ("ebp_validate_groups: FAIL: orphan group id 127 detected (2)");
+            returnCode = -1;
+         }
+      }
+      else if (grouping_id == 127)
+      {
+         if (i == 0)
+         {
+            LOG_ERROR ("ebp_validate_groups: FAIL: orphan group id 127 detected (1)");
+            returnCode = -1;
+         }
+
+         uint32_t previous_grouping_id = *((uint32_t *) vqarray_get (ebp->ebp_grouping_ids, i-1));
+         if (previous_grouping_id == 127)
+         {
+            LOG_ERROR ("ebp_validate_groups: FAIL: orphan group id 127 detected (2)");
+            returnCode = -1;
+         }
+      }
+   }
+
+   return returnCode;
+}
+
 int ebp_print(const ebp_t *ebp, char *str, size_t str_len)
 {
    return 1;
@@ -208,7 +296,7 @@ descriptor_t* ebp_descriptor_read(descriptor_t *desc, bs_t *b)
          if (partition_data->representation_id_flag == 1)
          {
             partition_data->representation_id = bs_read_u64(b);
-            partition_data->representation_id = ntohll(partition_data->representation_id);
+//            partition_data->representation_id = ntohll(partition_data->representation_id);
          }
 
          vqarray_add(ebp->partition_data, partition_data);
@@ -318,9 +406,133 @@ void ebp_descriptor_print_stdout(const ebp_descriptor_t *ebp_desc)
    }
 }
 
+ebp_partition_data_t* get_fragment_partition (const ebp_descriptor_t *ebp_desc)
+{
+   for (int i=0; i<vqarray_length(ebp_desc->partition_data); i++)
+   {
+      ebp_partition_data_t* partition = (ebp_partition_data_t *) vqarray_get(ebp_desc->partition_data, i);
+      if (partition->partition_id == EBP_PARTITION_FRAGMENT)
+      {
+         return partition;
+      }
+   }
+
+   return NULL;
+}
+
+ebp_partition_data_t* get_segment_partition (const ebp_descriptor_t *ebp_desc)
+{
+   for (int i=0; i<vqarray_length(ebp_desc->partition_data); i++)
+   {
+      ebp_partition_data_t* partition = (ebp_partition_data_t *) vqarray_get(ebp_desc->partition_data, i);
+      if (partition->partition_id == EBP_PARTITION_SEGMENT)
+      {
+         return partition;
+      }
+   }
+
+   return NULL;
+}
+
+
+int does_fragment_mark_boundary (const ebp_descriptor_t *ebp_desc)
+{
+   // walk partitions looking for partitionId == 2
+   // then return boundary_flag
+
+   for (int i=0; i<vqarray_length(ebp_desc->partition_data); i++)
+   {
+      ebp_partition_data_t* partition = (ebp_partition_data_t *) vqarray_get(ebp_desc->partition_data, i);
+      if (partition->partition_id == EBP_PARTITION_FRAGMENT)
+      {
+         if (partition->ebp_data_explicit_flag)
+         {
+            return partition->boundary_flag;
+         }
+         else
+         {
+            return 0;
+         }
+      }
+   }
+
+   return 0;
+}
+
+int does_segment_mark_boundary (const ebp_descriptor_t *ebp_desc)
+{
+   // walk partitions looking for partitionId == 1
+   // then return boundary_flag
+
+   for (int i=0; i<vqarray_length(ebp_desc->partition_data); i++)
+   {
+      ebp_partition_data_t* partition = (ebp_partition_data_t *) vqarray_get(ebp_desc->partition_data, i);
+      if (partition->partition_id == EBP_PARTITION_SEGMENT)
+      {
+         if (partition->ebp_data_explicit_flag)
+         {
+            return partition->boundary_flag;
+         }
+         else
+         {
+            return 0;
+         }
+      }
+   }
+
+   return 0;
+}
+
+uint8_t get_fragment_SAP_max (const ebp_descriptor_t *ebp_desc)
+{
+   // walk partitions looking for partitionId == 1
+   for (int i=0; i<vqarray_length(ebp_desc->partition_data); i++)
+   {
+      ebp_partition_data_t* partition = (ebp_partition_data_t *) vqarray_get(ebp_desc->partition_data, i);
+      if (partition->partition_id == EBP_PARTITION_FRAGMENT)
+      {
+         return partition->sap_type_max;
+      }
+   }
+
+   return 0;
+}
+
+uint8_t get_segment_SAP_max (const ebp_descriptor_t *ebp_desc)
+{
+   // walk partitions looking for partitionId == 1
+   for (int i=0; i<vqarray_length(ebp_desc->partition_data); i++)
+   {
+      ebp_partition_data_t* partition = (ebp_partition_data_t *) vqarray_get(ebp_desc->partition_data, i);
+      if (partition->partition_id == EBP_PARTITION_SEGMENT)
+      {
+         return partition->sap_type_max;
+      }
+   }
+
+   return 0;
+}
+
 uint64_t ntohll(uint64_t num)
 {
     uint64_t num2 = (((uint64_t)ntohl((unsigned int)num)) << 32) + (uint64_t)ntohl((unsigned int)(num >> 32));
     return num2;
+}
+
+void parseNTPTimestamp(uint64_t ntpTime, uint32_t *numSeconds, float *fractionalSecond)
+{
+   *numSeconds = (uint32_t)(ntpTime >> 32);
+
+   uint64_t twoToTheThirtytwo = 0x100000000;
+   uint64_t lowerThirtytwoMask = 0x00000000FFFFFFFF;
+
+   // careful with data sizes here
+   double numerator = (double)(ntpTime & lowerThirtytwoMask);
+   double denominator = (double)twoToTheThirtytwo;
+
+   double fraction = (numerator / denominator);
+   *fractionalSecond = fraction;
+
+   printf ("fraction = %f\n", fraction);
 }
 

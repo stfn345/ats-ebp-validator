@@ -56,17 +56,23 @@ void *EBPSegmentAnalysisThreadProc(void *threadParams)
    {
       exitThread = 1;
 
+      int nextPTSSet = 0;
       int64_t nextPTS = 0;
+
+      uint32_t acquisitionTimeSecs = 0;
+      float acquisitionTimeFracSec = 0.0;
+      int acquisitionTimePresent = 0;
+      int acquisitionTimeSet = 0;
 
       for (int i=0; i<ebpSegmentAnalysisThreadParams->numStreamInfos; i++)
       {
-         thread_safe_fifo_t *fifo = ebpSegmentAnalysisThreadParams->streamInfos[i]->fifo;
          ebp_stream_info_t *streamInfo = ebpSegmentAnalysisThreadParams->streamInfos[i];
-         if (fifoNotActive[i] || fifo == NULL)
+         if (fifoNotActive[i] || streamInfo == NULL)
          {
             LOG_DEBUG_ARGS ("EBPSegmentAnalysisThread %d: fifo %d not active --- skipping", ebpSegmentAnalysisThreadParams->threadID, i);
             continue;
          }
+         thread_safe_fifo_t *fifo = streamInfo->fifo;
 
          void *element;
          LOG_DEBUG_ARGS ("EBPSegmentAnalysisThread %d: calling fifo_pop for fifo %d", ebpSegmentAnalysisThreadParams->threadID, i);
@@ -99,9 +105,10 @@ void *EBPSegmentAnalysisThreadProc(void *threadParams)
                   ebpSegmentAnalysisThreadParams->threadID, ebpSegmentInfo->PTS, i, streamInfo->PID, 
                   (unsigned int)(ebpSegmentInfo->latestEBPDescriptor));
 
-               if (nextPTS == 0)
+               if (!nextPTSSet)
                {
                   nextPTS = ebpSegmentInfo->PTS;
+                  nextPTSSet = 1;
                }
                else
                {
@@ -110,6 +117,49 @@ void *EBPSegmentAnalysisThreadProc(void *threadParams)
                      LOG_ERROR_ARGS ("EBPSegmentAnalysisThread %d: FAIL: PTS MISMATCH for fifo %d (PID %d). Expected %"PRId64", Actual %"PRId64"",
                         ebpSegmentAnalysisThreadParams->threadID, i, streamInfo->PID, nextPTS, ebpSegmentInfo->PTS);
                      streamInfo->streamPassFail = 0;
+                  }
+               }
+
+               // next check that acquisition time matches
+               if (!acquisitionTimeSet)
+               {
+                  if (ebpSegmentInfo->EBP == NULL || ebpSegmentInfo->EBP->ebp_time_flag == 0)
+                  {
+                     acquisitionTimePresent = 0;
+                  }
+                  else
+                  {
+                     acquisitionTimePresent = 1;
+                     parseNTPTimestamp(ebpSegmentInfo->EBP->ebp_acquisition_time, &acquisitionTimeSecs, &acquisitionTimeFracSec);
+                  }
+
+                  acquisitionTimeSet = 1;
+               }
+               else
+               {
+                  int acquisitionTimePresentTemp = (ebpSegmentInfo->EBP != NULL && ebpSegmentInfo->EBP->ebp_time_flag != 0);
+                  if (acquisitionTimePresentTemp != acquisitionTimePresent)
+                  {
+                     LOG_ERROR_ARGS ("EBPSegmentAnalysisThread %d: FAIL: presence of acquisition time mismatch for fifo %d (PID %d).",
+                        ebpSegmentAnalysisThreadParams->threadID, i, streamInfo->PID);
+                     streamInfo->streamPassFail = 0;
+                  }
+   
+                  if (acquisitionTimePresentTemp)
+                  {
+                     uint32_t acquisitionTimeSecsTemp = 0;
+                     float acquisitionTimeFracSecTemp = 0.0;
+                     parseNTPTimestamp(ebpSegmentInfo->EBP->ebp_acquisition_time, 
+                        &acquisitionTimeSecsTemp, &acquisitionTimeFracSecTemp);
+                     if (acquisitionTimeSecsTemp != acquisitionTimeSecs ||
+                        acquisitionTimeFracSecTemp != acquisitionTimeFracSec)
+                     {
+                        LOG_ERROR_ARGS ("EBPSegmentAnalysisThread %d: FAIL: Acquisition time MISMATCH for fifo %d (PID %d). \
+                                        Expected %d,%f, Actual %d,%f", ebpSegmentAnalysisThreadParams->threadID, i, streamInfo->PID, 
+                                        acquisitionTimeSecs, acquisitionTimeFracSec,
+                                        acquisitionTimeSecsTemp, acquisitionTimeFracSecTemp);
+                        streamInfo->streamPassFail = 0;
+                     }
                   }
                }
                
@@ -139,12 +189,12 @@ int syncIncomingStreams (int threadID, int numStreamInfos, ebp_stream_info_t **s
    for (int i=0; i<numStreamInfos; i++)
    {
       ebp_stream_info_t *streamInfo = streamInfos[i];
-      thread_safe_fifo_t *fifo = streamInfos[i]->fifo;
-      if (fifoNotActive[i] || fifo == NULL)
+      if (fifoNotActive[i] || streamInfo == NULL)
       {
          LOG_INFO_ARGS ("EBPSegmentAnalysisThread:syncIncomingStreams %d: fifo %d not active --- skipping", threadID, i);
          continue;
       }
+      thread_safe_fifo_t *fifo = streamInfos[i]->fifo;
 
       LOG_DEBUG_ARGS ("EBPSegmentAnalysisThread:syncIncomingStreams %d: calling fifo_peek for fifo %d", threadID, i);
       returnCode = fifo_peek (fifo, &element);
@@ -182,12 +232,12 @@ int syncIncomingStreams (int threadID, int numStreamInfos, ebp_stream_info_t **s
    for (int i=0; i<numStreamInfos; i++)
    {
       ebp_stream_info_t *streamInfo = streamInfos[i];
-      thread_safe_fifo_t *fifo = streamInfos[i]->fifo;
-      if (fifoNotActive[i] || fifo == NULL)
+      if (fifoNotActive[i] || streamInfo == NULL)
       {
          LOG_INFO_ARGS ("EBPSegmentAnalysisThread:syncIncomingStreams %d: pruning: fifo %d not active --- skipping", threadID, i);
          continue;
       }
+      thread_safe_fifo_t *fifo = streamInfos[i]->fifo;
 
       while (1)
       {

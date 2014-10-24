@@ -78,6 +78,18 @@ int prereadFiles(int numFiles, char **fileNames, program_stream_info_t *programS
          return -1;
       }
 
+       // Register EBP descriptor parser
+      descriptor_table_entry_t *desc = calloc(1, sizeof(descriptor_table_entry_t));
+      desc->tag = EBP_DESCRIPTOR;
+      desc->free_descriptor = ebp_descriptor_free;
+      desc->print_descriptor = ebp_descriptor_print;
+      desc->read_descriptor = ebp_descriptor_read;
+      if (!register_descriptor(desc))
+      {
+         LOG_ERROR_ARGS("Main:prereadFiles: FAIL: Could not register EBP descriptor parser for file %s", fileNames[i]);
+         return -1;
+      }
+
       m2s->pat_processor = (pat_processor_t)pat_processor;
       m2s->arg = NULL;
       m2s->arg_destructor = NULL;
@@ -115,11 +127,21 @@ int prereadFiles(int numFiles, char **fileNames, program_stream_info_t *programS
       {
          if ((pi = vqarray_get(m2p->pids, j)) != NULL)
          {
-            LOG_DEBUG_ARGS ("Main:prereadFiles: stream %d: stream_type = %u, elementary_PID = %u, ES_info_length = %u",
+            LOG_INFO_ARGS ("Main:prereadFiles: stream %d: stream_type = %u, elementary_PID = %u, ES_info_length = %u",
                j, pi->es_info->stream_type, pi->es_info->elementary_PID, pi->es_info->ES_info_length);
 
             programStreamInfo[i].stream_types[j] = pi->es_info->stream_type;
             programStreamInfo[i].PIDs[j] = pi->es_info->elementary_PID;
+
+            ebp_descriptor_t* ebpDescriptor = getEBPDescriptor (pi->es_info);
+            if (ebpDescriptor != NULL)
+            {
+               ebp_descriptor_print_stdout (ebpDescriptor);
+            }
+            else
+            {
+               LOG_INFO ("NULL ebp_descriptor");
+            }
          }
       }
 
@@ -172,6 +194,100 @@ int teardownQueues(int numFiles, int numStreams, ebp_stream_info_t **streamInfoA
    return returnCode;
 }
 
+int getVideoPID(program_stream_info_t *programStreamInfo, uint32_t *PIDOut, uint32_t *streamType)
+{
+   int videoFound = 0;
+   for (int streamIndex = 0; streamIndex < programStreamInfo->numStreams; streamIndex++)
+   {
+      if (IS_VIDEO_STREAM((programStreamInfo->stream_types)[streamIndex]))
+      {
+         if (videoFound)
+         {
+            LOG_ERROR ("Main:getVideoPID: FAIL: more than one video stream found");
+            return -1;
+         }
+
+         *PIDOut = (programStreamInfo->PIDs)[streamIndex];
+         *streamType = (programStreamInfo->stream_types)[streamIndex];
+         videoFound = 1;
+      }
+   }
+
+   if (videoFound)
+   {
+      return 0;
+   }
+   else
+   {
+      LOG_ERROR ("Main:getVideoPID: FAIL: no video stream found");
+      return -1;
+   }
+}
+
+int getAudioPID(program_stream_info_t *programStreamInfo, uint32_t PIDIn, uint32_t *PIDOut, uint32_t *streamType)
+{
+   for (int streamIndex = 0; streamIndex < programStreamInfo->numStreams; streamIndex++)
+   {
+      if (IS_AUDIO_STREAM((programStreamInfo->stream_types)[streamIndex]))
+      {
+         if (PIDIn == (programStreamInfo->PIDs)[streamIndex])
+         {
+            *PIDOut = (programStreamInfo->PIDs)[streamIndex];
+            *streamType = (programStreamInfo->stream_types)[streamIndex];
+            return 0;
+         }
+      }
+   }
+
+   return -1;
+}
+
+varray_t *getUniqueAudioPIDArray(int numFiles, program_stream_info_t *programStreamInfo)
+{
+   LOG_INFO ("Main:getNumUniqueAudioStreams: entering");
+
+  // count how many unique audio streams there are
+   varray_t *audioStreamPIDArray = varray_new();
+   for (int fileIndex=0; fileIndex < numFiles; fileIndex++)
+   {
+      for (int streamIndex = 0; streamIndex < programStreamInfo[fileIndex].numStreams; streamIndex++)
+      {
+         if (IS_AUDIO_STREAM((programStreamInfo[fileIndex].stream_types)[streamIndex]))
+         {
+            int foundPID = 0;
+            for (int i=0; i<varray_length(audioStreamPIDArray); i++)
+            {
+               varray_elem_t* element = varray_get(audioStreamPIDArray, i);
+               uint32_t PID = *((uint32_t *)element);
+               if (PID == (programStreamInfo[fileIndex].PIDs)[streamIndex])
+               {
+                  foundPID = 1;
+                  break;
+               }
+            }
+
+            if (!foundPID)
+            {
+               LOG_INFO_ARGS ("Main:getNumUniqueAudioStreams: (%d, %d), adding PID %d", 
+                  fileIndex, streamIndex, (programStreamInfo[fileIndex].PIDs)[streamIndex]);
+
+               // add PID here
+               varray_add (audioStreamPIDArray, &((programStreamInfo[fileIndex].PIDs)[streamIndex]));
+            }
+            else
+            {
+                LOG_INFO_ARGS ("Main:getNumUniqueAudioStreams: (%d, %d), NOT adding PID %d", 
+                  fileIndex, streamIndex, (programStreamInfo[fileIndex].PIDs)[streamIndex]);
+
+           }
+         }
+      }
+   }
+                
+   LOG_INFO ("Main:getNumUniqueAudioStreams: exting");
+   return audioStreamPIDArray;
+}
+
 int setupQueues(int numFiles, char **fileNames, program_stream_info_t *programStreamInfo,
                 ebp_stream_info_t ***streamInfoArray, int *numStreamsPerFile)
 {
@@ -185,14 +301,22 @@ int setupQueues(int numFiles, char **fileNames, program_stream_info_t *programSt
    // audio files, then the total number of streams is 4 (video + 3 audio).
 
    // GORP: we need to distinguish audio streams, but for now, distinguish by PID
-   // GORP: we need to count number of distinct audio streams in set of files, but for now, 
-   // just assume that all files have the same audio streams
    
-   int numStreams = programStreamInfo[0].numStreams;
+
+   // count how many unique audio streams there are
+   varray_t *audioStreamPIDArray = getUniqueAudioPIDArray(numFiles, programStreamInfo);
+   int numStreams = varray_length(audioStreamPIDArray) + 1 /*video stream */;
+   LOG_INFO_ARGS ("Main:setupQueues: numStreams = %d", numStreams);
+
    *numStreamsPerFile = numStreams;
 
-   // *streamInfoArray is an array of stream_info pointers, not stream_infos.  this way, if a particular stream_info is not
-   // needed for a file, that stream_info pointer can be left null
+
+   // *streamInfoArray is an array of stream_info pointers, not stream_infos.  if a particular stream_info is not
+   // applicable for a file, that stream_info pointer can be left null.  In what follows we allocate stream info
+   // objets for each strem within a file.  The first stream info is always the video, and then next ones are audio -- we
+   // use the list of unique audio streams in the fileset obtained above to order the audio stream info list.
+   // if a file does not contain an audio stream, the stream info object for that stream is left NULL -- this
+   // is how the analysis threads know which stream info objects apply to a file.
    *streamInfoArray = (ebp_stream_info_t **) calloc (numFiles * numStreams, sizeof (ebp_stream_info_t*));
 
    for (int fileIndex=0; fileIndex < numFiles; fileIndex++)
@@ -200,7 +324,37 @@ int setupQueues(int numFiles, char **fileNames, program_stream_info_t *programSt
       for (int streamIndex=0; streamIndex < numStreams; streamIndex++)
       {
          int arrayIndex = get2DArrayIndex (fileIndex, streamIndex, numStreams);
-         (*streamInfoArray)[arrayIndex] = (ebp_stream_info_t *)calloc (1, sizeof (ebp_stream_info_t));
+
+         uint32_t PID;
+         uint32_t streamType;
+         if (streamIndex == 0)
+         {
+            returnCode = getVideoPID(&(programStreamInfo[fileIndex]), &PID, &streamType);
+            if (returnCode != 0)
+            {
+               // fatal error here -- no video stream
+               LOG_INFO_ARGS ("Main:setupQueues: no video stream for file %d", fileIndex);
+               continue;
+            }
+         }
+         else 
+         {
+            PID = *((uint32_t *)varray_get (audioStreamPIDArray, streamIndex-1));
+            uint32_t PIDTemp;
+            returnCode = getAudioPID(&(programStreamInfo[fileIndex]), PID, &PIDTemp, &streamType);
+            if (returnCode != 0)
+            {
+               // this audio stream doesn't exist, so leave stream info NULL
+               LOG_INFO_ARGS ("Main:setupQueues: (%d, %d) skipping fifo creation for PID %d", 
+                  fileIndex, streamIndex, PID);
+               continue;
+            }         
+         }
+
+         LOG_INFO_ARGS ("Main:setupQueues: (%d, %d) creating fifo for PID %d", 
+                  fileIndex, streamIndex, PID);
+
+        (*streamInfoArray)[arrayIndex] = (ebp_stream_info_t *)calloc (1, sizeof (ebp_stream_info_t));
          ebp_stream_info_t *streamInfo = (*streamInfoArray)[arrayIndex];
 
          streamInfo->fifo = (thread_safe_fifo_t *)calloc (1, sizeof (thread_safe_fifo_t));
@@ -215,8 +369,7 @@ int setupQueues(int numFiles, char **fileNames, program_stream_info_t *programSt
             return -1;
          }
 
-         streamInfo->PID = ((programStreamInfo[fileIndex]).PIDs)[streamIndex];
-         uint32_t streamType = ((programStreamInfo[fileIndex]).stream_types)[streamIndex];
+         streamInfo->PID = PID;
          streamInfo->isVideo = IS_VIDEO_STREAM(streamType);
          streamInfo->ebpImplicit = 0;  // explicit
          streamInfo->ebpImplicitPID = 0;
@@ -226,6 +379,7 @@ int setupQueues(int numFiles, char **fileNames, program_stream_info_t *programSt
       }
    }
 
+   varray_free(audioStreamPIDArray);
    LOG_INFO ("Main:setupQueues: exiting");
    return 0;
 }
@@ -371,10 +525,8 @@ void analyzeResults(int numFiles, int numStreams, ebp_stream_info_t **streamInfo
             continue;
          }
 
-         // GORP: include video/audio info
-         // GORP: include expicit/implicit info
-         LOG_INFO_ARGS ("      PID %d: %s", streamInfo->PID,
-            (streamInfo->streamPassFail?"PASS":"FAIL"));
+         LOG_INFO_ARGS ("      PID %d (%s -- %s): %s", streamInfo->PID, (streamInfo->isVideo?"VIDEO":"AUDIO"),
+            (streamInfo->ebpImplicit?"Implicit EBP":"Explicit EBP"), (streamInfo->streamPassFail?"PASS":"FAIL"));
       }
       LOG_INFO ("");
    }
@@ -464,3 +616,17 @@ int main(int argc, char** argv)
    LOG_INFO ("Main: exiting");
    return 0;
 }
+
+
+void testsParseNTPTimestamp()
+{
+   uint32_t numSeconds;
+   float fractionalSecond;
+
+   uint64_t ntpTime = 0x0000000180000000;
+
+   parseNTPTimestamp(ntpTime, &numSeconds, &fractionalSecond);
+
+   printf ("numSeconds = %u, fractionalSecond = %f\n", numSeconds, fractionalSecond);
+}
+

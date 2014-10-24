@@ -11,6 +11,9 @@ extern "C"
 {
 #endif
 
+#define EBP_PARTITION_SEGMENT    1
+#define EBP_PARTITION_FRAGMENT   2
+
 typedef struct {
 
    uint8_t ebp_fragment_flag;
@@ -37,6 +40,8 @@ void ebp_free(ebp_t *ebp);
 int ebp_read(ebp_t *ebp, ts_scte128_private_data_t *scte128);
 int ebp_print(const ebp_t *ebp, char *str, size_t str_len);
 void ebp_print_stdout(const ebp_t *ebp);
+int ebp_validate_groups(const ebp_t *ebp);
+void parseNTPTimestamp(uint64_t ntpTime, uint32_t *numSeconds, float *fractionalSecond);
 
 typedef struct {
 
@@ -77,6 +82,17 @@ descriptor_t* ebp_descriptor_read(descriptor_t *desc, bs_t *b);
 int ebp_descriptor_print(const descriptor_t *desc, int level, char *str, size_t str_len);
 void ebp_descriptor_print_stdout(const ebp_descriptor_t *ebp_desc);
 ebp_descriptor_t* ebp_descriptor_copy(const ebp_descriptor_t *ebp_desc);
+
+int does_fragment_mark_boundary (const ebp_descriptor_t *ebp_desc);
+int does_segment_mark_boundary (const ebp_descriptor_t *ebp_desc);
+
+ebp_partition_data_t* get_fragment_partition (const ebp_descriptor_t *ebp_desc);
+ebp_partition_data_t* get_segment_partition (const ebp_descriptor_t *ebp_desc);
+
+uint8_t get_fragment_SAP_max (const ebp_descriptor_t *ebp_desc);
+uint8_t get_segment_SAP_max (const ebp_descriptor_t *ebp_desc);
+
+
 
 uint64_t ntohll(uint64_t num);
 
