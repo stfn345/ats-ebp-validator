@@ -32,6 +32,7 @@ typedef struct
 {
    int64_t PTS;
    uint32_t SAPType;
+   uint8_t partitionId;
 
    ebp_t *EBP;
    ebp_descriptor_t *latestEBPDescriptor;

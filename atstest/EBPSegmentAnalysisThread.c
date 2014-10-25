@@ -255,7 +255,7 @@ int syncIncomingStreams (int threadID, int numStreamInfos, ebp_stream_info_t **s
 
          if (element == NULL)
          {
-            LOG_INFO_ARGS ("EBPSegmentAnalysisThread:syncIncomingStreams %d: pruning: pop complete: element = NULL -- marking fifo %d inactive", threadID, i);
+            LOG_INFO_ARGS ("EBPSegmentAnalysisThread:syncIncomingStreams %d: pruning: peek complete: element = NULL -- marking fifo %d inactive", threadID, i);
             // worker thread is done -- keep track of these
             fifoNotActive[i] = 1;
             break;
@@ -277,6 +277,8 @@ int syncIncomingStreams (int threadID, int numStreamInfos, ebp_stream_info_t **s
                   // fatal error here -- exit
                   exit (-1);
                }
+
+               // GORP: deallocate popped element
             }
             else
             {

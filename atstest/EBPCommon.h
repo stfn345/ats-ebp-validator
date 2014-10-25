@@ -21,14 +21,29 @@
 #include "ThreadSafeFIFO.h"
 #include "log.h"
 
+
+#define EBP_NUM_PARTITIONS 10  // 0 - 9
+
+typedef struct
+{
+   int isBoundary;
+   int isImplicit;
+   uint32_t implicitPID; // only applicable if implicit -- default is video PID
+
+   uint64_t lastImplicitPTS;
+   int isLastImplicitPTSValid;
+
+} ebp_boundary_info_t;
+
 typedef struct
 {
    uint32_t PID;  // PID within program for this fifo
    int isVideo; // =1 if this fifo carries video info, =0 if audio
-   int ebpImplicit;  // = 0 if the chunks are marked by explicit EBP, =1 if marked implicitly
-   uint32_t ebpImplicitPID;  // if != 0, then has the PID for implicit EBP, else =0 for no PID
+
    uint64_t lastVideoChunkPTS;
    int lastVideoChunkPTSValid;
+
+   ebp_boundary_info_t* ebpBoundaryInfo;  // contain info on which partitions are boundaries
 
    int streamPassFail;  // 1 == pass, 0 == fail
 

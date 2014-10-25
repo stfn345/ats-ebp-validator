@@ -33,13 +33,17 @@ typedef struct
 
 void cleanupAndExit(ebp_file_ingest_thread_params_t *ebpFileIngestThreadParams);
 int postToFIFO (uint64_t PTS, uint32_t sapType, ebp_t *ebp, ebp_descriptor_t *ebpDescriptor,
-                 uint32_t PID, ebp_file_ingest_thread_params_t *ebpFileIngestThreadParams);
+                 uint32_t PID, ebp_file_ingest_thread_params_t *ebpFileIngestThreadParams, 
+                 uint8_t partitionId);
 
 ebp_descriptor_t* getEBPDescriptor (elementary_stream_info_t *esi);
 void findFIFO (uint32_t PID, ebp_stream_info_t **streamInfos, int numStreamInfos,
    thread_safe_fifo_t**fifoOut, int *fifoIndex);
 ebp_t* getEBP(ts_packet_t *ts, ebp_stream_info_t * streamInfo, int threadNum);
 static char* getStreamTypeDesc (elementary_stream_info_t *esi);
+void detectBoundary(int threadNum, ebp_t* ebp, ebp_stream_info_t *streamInfo, uint64_t PTS, int *isBoundary);
+void triggerImplicitBoundaries (int threadNum, ebp_stream_info_t **streamInfoArray, int numStreams,
+   int currentStreamInfoIndex, uint64_t PTS, uint8_t partitionId);
 
 void *EBPFileIngestThreadProc(void *threadParams);
 

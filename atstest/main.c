@@ -22,7 +22,37 @@ typedef struct
    int numStreams;
    uint32_t *stream_types;
    uint32_t *PIDs;
+   ebp_descriptor_t **ebpDescriptors;
+
 } program_stream_info_t;
+
+ebp_boundary_info_t *setupDefaultBoundaryInfoArray()
+{
+   ebp_boundary_info_t * boundaryInfoArray = (ebp_boundary_info_t *) calloc (EBP_NUM_PARTITIONS, sizeof(ebp_boundary_info_t));
+
+   // by default, segments and fragments are assumed to be boundaries
+   boundaryInfoArray[1].isBoundary = 1;
+   boundaryInfoArray[2].isBoundary = 1;
+
+   return boundaryInfoArray;
+}
+
+void modBoundaryInfoArray (ebp_descriptor_t * ebpDescriptor, ebp_boundary_info_t *boundaryInfoArray)
+{
+   for (int i=0; i<ebpDescriptor->num_partitions; i++)
+   {
+      ebp_partition_data_t *partition = (ebp_partition_data_t *)vqarray_get(ebpDescriptor->partition_data, i);
+      if (partition->partition_id > 9)
+      {
+         // GORP: error here
+      }
+
+
+      boundaryInfoArray[partition->partition_id].isBoundary = partition->boundary_flag;
+      boundaryInfoArray[partition->partition_id].isImplicit = !(partition->ebp_data_explicit_flag);
+      boundaryInfoArray[partition->partition_id].implicitPID = partition->ebp_pid;
+   }
+}
 
 static int pmt_processor(mpeg2ts_program_t *m2p, void *arg)
 {
@@ -122,6 +152,7 @@ int prereadFiles(int numFiles, char **fileNames, program_stream_info_t *programS
       programStreamInfo[i].numStreams = vqarray_length(m2p->pids);
       programStreamInfo[i].stream_types = (uint32_t*) calloc (programStreamInfo[i].numStreams, sizeof (uint32_t));
       programStreamInfo[i].PIDs = (uint32_t*) calloc (programStreamInfo[i].numStreams, sizeof (uint32_t));
+      programStreamInfo[i].ebpDescriptors = (ebp_descriptor_t**) calloc (programStreamInfo[i].numStreams, sizeof (ebp_descriptor_t *));
 
       for (int j = 0; j < vqarray_length(m2p->pids); j++)
       {
@@ -137,6 +168,7 @@ int prereadFiles(int numFiles, char **fileNames, program_stream_info_t *programS
             if (ebpDescriptor != NULL)
             {
                ebp_descriptor_print_stdout (ebpDescriptor);
+               programStreamInfo[i].ebpDescriptors[j] = ebp_descriptor_copy(ebpDescriptor);
             }
             else
             {
@@ -371,11 +403,14 @@ int setupQueues(int numFiles, char **fileNames, program_stream_info_t *programSt
 
          streamInfo->PID = PID;
          streamInfo->isVideo = IS_VIDEO_STREAM(streamType);
-         streamInfo->ebpImplicit = 0;  // explicit
-         streamInfo->ebpImplicitPID = 0;
+
          streamInfo->lastVideoChunkPTS = 0;
          streamInfo->lastVideoChunkPTSValid = 0;
          streamInfo->streamPassFail = 1;
+
+         streamInfo->ebpBoundaryInfo = setupDefaultBoundaryInfoArray();
+         modBoundaryInfoArray (programStreamInfo[fileIndex].ebpDescriptors[streamIndex], 
+            streamInfo->ebpBoundaryInfo);
       }
    }
 
@@ -525,10 +560,12 @@ void analyzeResults(int numFiles, int numStreams, ebp_stream_info_t **streamInfo
             continue;
          }
 
-         LOG_INFO_ARGS ("      PID %d (%s -- %s): %s", streamInfo->PID, (streamInfo->isVideo?"VIDEO":"AUDIO"),
-            (streamInfo->ebpImplicit?"Implicit EBP":"Explicit EBP"), (streamInfo->streamPassFail?"PASS":"FAIL"));
+         LOG_INFO_ARGS ("      PID %d (%s): %s", streamInfo->PID, (streamInfo->isVideo?"VIDEO":"AUDIO"),
+            (streamInfo->streamPassFail?"PASS":"FAIL"));
       }
       LOG_INFO ("");
+
+      // GORP: print out ebpBoundaryInfo
    }
 
    LOG_INFO ("TEST RESULTS END");

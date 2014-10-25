@@ -60,7 +60,7 @@ static int validate_pes_packet(pes_packet_t *pes, elementary_stream_info_t *esi,
       pes_free(pes);
       return 1; // Don't care about this packet
    }
-         
+
    ebp_file_ingest_thread_params_t *ebpFileIngestThreadParams = (ebp_file_ingest_thread_params_t *)arg;
 
    thread_safe_fifo_t *fifo = NULL;
@@ -84,11 +84,87 @@ static int validate_pes_packet(pes_packet_t *pes, elementary_stream_info_t *esi,
    ebp_t* ebp = getEBP(ts, streamInfo, ebpFileIngestThreadParams->threadNum);
    if (ebp != NULL)
    {
-      LOG_DEBUG_ARGS("FileIngestThread %d: Found EBP data in transport packet: PID %d (%s)", 
+      LOG_INFO_ARGS("FileIngestThread %d: Found EBP data in transport packet: PID %d (%s)", 
          ebpFileIngestThreadParams->threadNum, esi->elementary_PID, getStreamTypeDesc (esi));
       ebp_print_stdout(ebp);
+         
+      if (ebp_validate_groups(ebp) != 0)
+      {
+         // if there is a ebp in the stream, then we need an ebp_descriptor to interpret it
+         LOG_ERROR_ARGS("FileIngestThread %d: FAIL: EBP group validation failed: PID %d (%s)", 
+            ebpFileIngestThreadParams->threadNum, esi->elementary_PID, getStreamTypeDesc (esi));
+
+         streamInfo->streamPassFail = 0;
+      }
    }
 
+      
+   // isBoundary is an array indexed by PartitionId -- we will analyze the segment once
+   // for each partition that triggered a boundary
+   int *isBoundary = (int *)calloc (EBP_NUM_PARTITIONS, sizeof(int));
+   detectBoundary(ebpFileIngestThreadParams->threadNum, ebp, streamInfo, pes->header.PTS, isBoundary);
+
+   for (uint8_t i=0; i<EBP_NUM_PARTITIONS; i++)
+   {
+      if (isBoundary[i])
+      {
+         uint32_t sapType = 0;  // GORP: fill in
+         ebp_descriptor_t* ebpDescriptor = getEBPDescriptor (esi);  // could be null
+
+         ebp_t* ebp_copy = getEBP(ts, streamInfo, ebpFileIngestThreadParams->threadNum);
+         int returnCode = postToFIFO (pes->header.PTS, sapType, ebp_copy, ebpDescriptor, 
+            esi->elementary_PID, ebpFileIngestThreadParams, i);
+         if (returnCode != 0)
+         {
+            LOG_ERROR_ARGS("FileIngestThread %d: FAIL: Error posting to FIFO for partition %d: PID %d (%s)", 
+               ebpFileIngestThreadParams->threadNum, i, esi->elementary_PID, getStreamTypeDesc (esi));
+
+            streamInfo->streamPassFail = 0;
+         }
+
+         // GORP: the following does not need to e done for each ppartition -- it needs to only be done once
+         if (IS_VIDEO_STREAM(esi->stream_type))
+         {
+            // if this is video, set lastVideoPTS in audio fifos
+            for (int ii=0; ii<ebpFileIngestThreadParams->numStreamInfos; ii++)
+            {
+               if (ii == fifoIndex)
+               {
+                  continue;
+               }
+
+               ebp_stream_info_t * streamInfoTemp = ebpFileIngestThreadParams->streamInfos[i];
+                     
+               streamInfoTemp->lastVideoChunkPTS = pes->header.PTS;
+               streamInfoTemp->lastVideoChunkPTSValid = 1;
+            }
+         }
+         else if (IS_AUDIO_STREAM(esi->stream_type))
+         {
+            // this is an audio stream, so check that audio does not lag video by more than 3 seconds
+            if (pes->header.PTS > (streamInfo->lastVideoChunkPTS + 3 * 90000))  // PTS is 90kHz ticks
+            {
+               LOG_ERROR_ARGS("FileIngestThread %d: FAIL: Audio PTS (%"PRId64") lags video PTS (%"PRId64") by more than 3 seconds: PID %d (%s)", 
+                  ebpFileIngestThreadParams->threadNum, pes->header.PTS, streamInfo->lastVideoChunkPTS, 
+                  esi->elementary_PID, getStreamTypeDesc (esi));
+
+               streamInfo->streamPassFail = 0;
+            }
+         }
+         
+         triggerImplicitBoundaries (ebpFileIngestThreadParams->threadNum, ebpFileIngestThreadParams->streamInfos, 
+            ebpFileIngestThreadParams->numStreamInfos, fifoIndex, pes->header.PTS, (uint8_t) i);
+      }
+   }
+   
+   if (ebp != NULL)
+   {
+      ebp_free(ebp);
+   }
+
+   free (isBoundary);
+
+   /*
    if (streamInfo->ebpImplicit)
    {
       if (ebp != NULL)
@@ -187,6 +263,7 @@ static int validate_pes_packet(pes_packet_t *pes, elementary_stream_info_t *esi,
          }
       }
    }
+      */
 
    pes_free(pes);
    return 1;
@@ -436,7 +513,7 @@ void findFIFO (uint32_t PID, ebp_stream_info_t **streamInfos, int numStreamInfos
 }
 
 int postToFIFO  (uint64_t PTS, uint32_t sapType, ebp_t *ebp, ebp_descriptor_t *ebpDescriptor,
-                 uint32_t PID, ebp_file_ingest_thread_params_t *ebpFileIngestThreadParams)
+                 uint32_t PID, ebp_file_ingest_thread_params_t *ebpFileIngestThreadParams, uint8_t partitionId)
 {
    ebp_segment_info_t *ebpSegmentInfo = 
       (ebp_segment_info_t *)malloc (sizeof (ebp_segment_info_t));
@@ -444,6 +521,7 @@ int postToFIFO  (uint64_t PTS, uint32_t sapType, ebp_t *ebp, ebp_descriptor_t *e
    ebpSegmentInfo->PTS = PTS;
    ebpSegmentInfo->SAPType = sapType;
    ebpSegmentInfo->EBP = ebp;
+   ebpSegmentInfo->partitionId = partitionId;
    // make a copy of ebp_descriptor since this mem could be freed before being prcessed by analysis thread
    ebpSegmentInfo->latestEBPDescriptor = ebp_descriptor_copy(ebpDescriptor);  
    
@@ -458,8 +536,8 @@ int postToFIFO  (uint64_t PTS, uint32_t sapType, ebp_t *ebp, ebp_descriptor_t *e
       return -1;
    }
 
-   LOG_INFO_ARGS ("EBPFileIngestThread %d: POSTING PTS %"PRId64" to FIFO (PID %d)", 
-      ebpFileIngestThreadParams->threadNum, PTS, PID);
+   LOG_INFO_ARGS ("EBPFileIngestThread %d: POSTING PTS %"PRId64" to for partition %d FIFO (PID %d)", 
+      ebpFileIngestThreadParams->threadNum, PTS, partitionId, PID);
    int returnCode = fifo_push (fifo, ebpSegmentInfo);
    if (returnCode != 0)
    {
@@ -470,6 +548,129 @@ int postToFIFO  (uint64_t PTS, uint32_t sapType, ebp_t *ebp, ebp_descriptor_t *e
    }
 
    return 0;
+}
+
+void triggerImplicitBoundaries (int threadNum, ebp_stream_info_t **streamInfoArray, int numStreams,
+   int currentStreamInfoIndex, uint64_t PTS, uint8_t partitionId)
+{
+   for (int i=0; i<numStreams; i++)
+   {
+      if (i == currentStreamInfoIndex) continue;
+   
+      ebp_boundary_info_t *ebpBoundaryInfo = streamInfoArray[i]->ebpBoundaryInfo;
+
+      if (ebpBoundaryInfo[partitionId].isBoundary && 
+         ebpBoundaryInfo[partitionId].isImplicit &&
+         (ebpBoundaryInfo[partitionId].implicitPID == streamInfoArray[currentStreamInfoIndex]->PID))
+      {
+         ebpBoundaryInfo[partitionId].lastImplicitPTS = PTS;
+         ebpBoundaryInfo[partitionId].isLastImplicitPTSValid = 1;
+      }
+   }
+}
+
+
+void detectBoundary(int threadNum, ebp_t* ebp, ebp_stream_info_t *streamInfo, uint64_t PTS, int *isBoundary)
+{
+   // isBoundary is an array indexed by PartitionId;
+
+   ebp_boundary_info_t *ebpBoundaryInfo = streamInfo->ebpBoundaryInfo;
+
+   // first check for implicit boundaries
+   for (int i=1; i<EBP_NUM_PARTITIONS; i++)  // skip partition 0
+   {
+      if (ebpBoundaryInfo[i].isBoundary && 
+         ebpBoundaryInfo[i].isImplicit && 
+         ebpBoundaryInfo[i].isLastImplicitPTSValid &&
+         (PTS > ebpBoundaryInfo[i].lastImplicitPTS))
+      {
+         isBoundary[i] = 1;
+         ebpBoundaryInfo[i].isLastImplicitPTSValid = 0;
+      }
+   }
+
+   if (ebp == NULL)
+   {
+      return;
+   }
+
+   // next check for explicit boundaries
+   if (ebp->ebp_segment_flag)
+   {
+      if (ebpBoundaryInfo[EBP_PARTITION_SEGMENT].isBoundary)
+      {
+         if (ebpBoundaryInfo[EBP_PARTITION_SEGMENT].isImplicit)
+         {
+            LOG_ERROR_ARGS("FileIngestThread %d: FAIL: Unexpected EBP struct detected for partition %d: PID %d", 
+               threadNum, EBP_PARTITION_SEGMENT, streamInfo->PID);
+         }
+         else
+         {
+            isBoundary[EBP_PARTITION_SEGMENT] = 1;
+         }
+      }
+      else
+      {
+         LOG_ERROR_ARGS("FileIngestThread %d: FAIL: Unexpected EBP struct detected for partition %d: PID %d", 
+            threadNum, EBP_PARTITION_SEGMENT, streamInfo->PID);
+      }
+   }
+
+   if (ebp->ebp_fragment_flag)
+   {
+      if (ebpBoundaryInfo[EBP_PARTITION_FRAGMENT].isBoundary)
+      {
+         if (ebpBoundaryInfo[EBP_PARTITION_FRAGMENT].isImplicit)
+         {
+            LOG_ERROR_ARGS("FileIngestThread %d: FAIL: Unexpected EBP struct detected for partition %d: PID %d", 
+               threadNum, EBP_PARTITION_FRAGMENT, streamInfo->PID);
+         }
+         else
+         {
+            isBoundary[EBP_PARTITION_FRAGMENT] = 1;
+         }
+      }
+      else
+      {
+         LOG_ERROR_ARGS("FileIngestThread %d: FAIL: Unexpected EBP struct detected for partition %d: PID %d", 
+            threadNum, EBP_PARTITION_FRAGMENT, streamInfo->PID);
+      }
+   }
+
+   if (ebp->ebp_ext_partition_flag)
+   {
+      uint8_t ebp_ext_partitions_temp = ebp->ebp_ext_partitions;
+      ebp_ext_partitions_temp = ebp_ext_partitions_temp >> 1; // skip partition1d 0
+      ebp_ext_partitions_temp = ebp_ext_partitions_temp >> 1; // skip partition1d 1
+      ebp_ext_partitions_temp = ebp_ext_partitions_temp >> 1; // skip partition1d 2
+
+      for (int i=3; i<EBP_NUM_PARTITIONS; i++)
+      {
+         if (ebp_ext_partitions_temp & 0x1)
+         {
+            if ((ebpBoundaryInfo[i].isBoundary))
+            {
+               if (ebpBoundaryInfo[i].isImplicit)
+               {
+                  LOG_ERROR_ARGS("FileIngestThread %d: FAIL: Unexpected EBP struct detected for partition %d: PID %d", 
+                     threadNum, i, streamInfo->PID);
+               }
+               else
+               {
+                  isBoundary[i] = 1;
+               }
+            }
+            else
+            {
+               LOG_ERROR_ARGS("FileIngestThread %d: FAIL: Unexpected EBP struct detected for partition %d: PID %d", 
+                  threadNum, i, streamInfo->PID);
+            }
+         }
+
+         ebp_ext_partitions_temp = ebp_ext_partitions_temp >> 1;
+      }
+   }
+
 }
 
 void cleanupAndExit(ebp_file_ingest_thread_params_t *ebpFileIngestThreadParams)

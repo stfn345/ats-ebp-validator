@@ -325,7 +325,6 @@ int ebp_descriptor_print(const descriptor_t *desc, int level, char *str, size_t 
 
 ebp_descriptor_t* ebp_descriptor_copy(const ebp_descriptor_t *ebp_in)
 {
-
    ebp_descriptor_t *ebp = (ebp_descriptor_t *)calloc(1, sizeof(ebp_descriptor_t));
    
  //  printf ("ebp_descriptor_copy: from %x to %x\n", (unsigned int)ebp_in, (unsigned int)ebp);
