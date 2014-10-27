@@ -49,6 +49,7 @@ void varray_remove(varray_t* v, int i);
 void varray_add(varray_t* v, varray_elem_t* e);
 void varray_push(varray_t* v, varray_elem_t* e);
 varray_elem_t* varray_pop(varray_t* v);
+varray_elem_t* varray_peek(varray_t* v);
 void varray_unshift(varray_t* v, varray_elem_t* e);
 varray_elem_t* varray_shift(varray_t* v);
 varray_t* varray_copy(varray_t* v);

@@ -155,6 +155,14 @@ void varray_push(varray_t* v, varray_elem_t* e) { varray_insert(v, varray_length
 varray_elem_t* varray_pop(varray_t* v) { varray_elem_t* e = varray_get(v, varray_length(v)-1); varray_remove(v, varray_length(v)-1); return e; }
 
 /**
+   Return (but dont remove) the element at the end of the array.
+   If the array is empty, returns NULL.
+   @param v the array
+   @return the element
+*/
+varray_elem_t* varray_peek(varray_t* v) { varray_elem_t* e = varray_get(v, varray_length(v)-1); return e; }
+
+/**
    Add the element to the beginning of the array.
    @param v the array
    @param e the element
