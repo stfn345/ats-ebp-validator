@@ -278,7 +278,7 @@ int syncIncomingStreams (int threadID, int numStreamInfos, ebp_stream_info_t **s
                   exit (-1);
                }
 
-               // GORP: deallocate popped element
+               cleanupEBPSegmentInfo (ebpSegmentInfo);
             }
             else
             {
@@ -297,6 +297,11 @@ int syncIncomingStreams (int threadID, int numStreamInfos, ebp_stream_info_t **s
 
 void cleanupEBPSegmentInfo (ebp_segment_info_t *ebpSegmentInfo)
 {
+   if (ebpSegmentInfo == NULL)
+   {
+      return;
+   }
+
    if (ebpSegmentInfo->EBP != NULL)
    {
       ebp_free(ebpSegmentInfo->EBP);

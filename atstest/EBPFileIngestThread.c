@@ -37,6 +37,9 @@ static char *STREAM_TYPE_UNKNOWN = "UNKNOWN";
 static char *STREAM_TYPE_VIDEO = "VIDEO";
 static char *STREAM_TYPE_AUDIO = "AUDIO";
 
+static char* getStreamTypeDesc (elementary_stream_info_t *esi);
+
+
 static int validate_ts_packet(ts_packet_t *ts, elementary_stream_info_t *es_info, void *arg)
 {
    return 1;
@@ -104,6 +107,8 @@ static int validate_pes_packet(pes_packet_t *pes, elementary_stream_info_t *esi,
    int *isBoundary = (int *)calloc (EBP_NUM_PARTITIONS, sizeof(int));
    detectBoundary(ebpFileIngestThreadParams->threadNum, ebp, streamInfo, pes->header.PTS, isBoundary);
 
+   int lastVideoPTSSet = 0;
+
    for (uint8_t i=0; i<EBP_NUM_PARTITIONS; i++)
    {
       if (isBoundary[i])
@@ -122,8 +127,8 @@ static int validate_pes_packet(pes_packet_t *pes, elementary_stream_info_t *esi,
             streamInfo->streamPassFail = 0;
          }
 
-         // GORP: the following does not need to e done for each ppartition -- it needs to only be done once
-         if (IS_VIDEO_STREAM(esi->stream_type))
+         // do the following once only -- use flag lastVideoPTSSet to tell if already done
+         if ((lastVideoPTSSet == 0) && IS_VIDEO_STREAM(esi->stream_type))
          {
             // if this is video, set lastVideoPTS in audio fifos
             for (int ii=0; ii<ebpFileIngestThreadParams->numStreamInfos; ii++)
@@ -133,11 +138,12 @@ static int validate_pes_packet(pes_packet_t *pes, elementary_stream_info_t *esi,
                   continue;
                }
 
-               ebp_stream_info_t * streamInfoTemp = ebpFileIngestThreadParams->streamInfos[i];
+               ebp_stream_info_t * streamInfoTemp = ebpFileIngestThreadParams->streamInfos[ii];
                      
                streamInfoTemp->lastVideoChunkPTS = pes->header.PTS;
                streamInfoTemp->lastVideoChunkPTSValid = 1;
             }
+            lastVideoPTSSet = 1;
          }
          else if (IS_AUDIO_STREAM(esi->stream_type))
          {
@@ -150,6 +156,7 @@ static int validate_pes_packet(pes_packet_t *pes, elementary_stream_info_t *esi,
 
                streamInfo->streamPassFail = 0;
             }
+            streamInfo->lastVideoChunkPTSValid = 0;
          }
          
          triggerImplicitBoundaries (ebpFileIngestThreadParams->threadNum, ebpFileIngestThreadParams->streamInfos, 
@@ -164,106 +171,6 @@ static int validate_pes_packet(pes_packet_t *pes, elementary_stream_info_t *esi,
 
    free (isBoundary);
 
-   /*
-   if (streamInfo->ebpImplicit)
-   {
-      if (ebp != NULL)
-      {
-         LOG_ERROR_ARGS("FileIngestThread %d: FAIL: Explicit EBP found in implicit-EBP stream: PID %d (%s)", 
-          ebpFileIngestThreadParams->threadNum, esi->elementary_PID, getStreamTypeDesc (esi));
-
-         streamInfo->streamPassFail = 0;
-      }
-
-      if (streamInfo->lastVideoChunkPTSValid && pes->header.PTS > streamInfo->lastVideoChunkPTS)
-      {
-         uint32_t sapType = 0;  // GORP: fill in
-         ebp_descriptor_t* ebpDescriptor = getEBPDescriptor (esi);  // could be null
-
-         int returnCode = postToFIFO (pes->header.PTS, sapType, ebp, ebpDescriptor, esi->elementary_PID, ebpFileIngestThreadParams);
-         if (returnCode != 0)
-         {
-            LOG_ERROR_ARGS("FileIngestThread %d: FAIL: Error posting to FIFO: PID %d (%s)", 
-               ebpFileIngestThreadParams->threadNum, esi->elementary_PID, getStreamTypeDesc (esi));
-
-            streamInfo->streamPassFail = 0;
-         }
-
-         streamInfo->lastVideoChunkPTSValid = 0;
-      }
-   }
-   else if (!streamInfo->ebpImplicit)
-   {
-      if (ebp != NULL)
-      {
-         ebp_descriptor_t* ebpDescriptor = getEBPDescriptor (esi);
-         if (ebpDescriptor == NULL)
-         {
-            // if there is a ebp in the stream, then we need an ebp_descriptor to interpret it
-            LOG_ERROR_ARGS("FileIngestThread %d: FAIL: EBP struct present but EBP Descriptor missing: PID %d (%s)", 
-               ebpFileIngestThreadParams->threadNum, esi->elementary_PID, getStreamTypeDesc (esi));
-
-            streamInfo->streamPassFail = 0;
-         }
-
-         if (ebp_validate_groups(ebp) != 0)
-         {
-            // if there is a ebp in the stream, then we need an ebp_descriptor to interpret it
-            LOG_ERROR_ARGS("FileIngestThread %d: FAIL: EBP group validation failed: PID %d (%s)", 
-               ebpFileIngestThreadParams->threadNum, esi->elementary_PID, getStreamTypeDesc (esi));
-
-            streamInfo->streamPassFail = 0;
-         }
-
-         // check if this is a boundary
-         if (ebpDescriptor != NULL &&
-             ((ebp->ebp_fragment_flag && does_fragment_mark_boundary (ebpDescriptor)) ||
-             (ebp->ebp_segment_flag && does_segment_mark_boundary (ebpDescriptor))))
-         {
-            // yes, its a boundary
-
-            uint32_t sapType = 0;  // GORP: fill in
-            int returnCode = postToFIFO (pes->header.PTS, sapType, ebp, ebpDescriptor, esi->elementary_PID, ebpFileIngestThreadParams);
-            if (returnCode != 0)
-            {
-               LOG_ERROR_ARGS("FileIngestThread %d: FAIL: Error posting to FIFO: PID %d (%s)", 
-                  ebpFileIngestThreadParams->threadNum, esi->elementary_PID, getStreamTypeDesc (esi));
-
-               streamInfo->streamPassFail = 0;
-            }
-
-            if (IS_VIDEO_STREAM(esi->stream_type))
-            {
-               // if this is video, set lastVideoPTS in audio fifos
-               for (int i=0; i<ebpFileIngestThreadParams->numStreamInfos; i++)
-               {
-                  if (i == fifoIndex)
-                  {
-                     continue;
-                  }
-
-                  ebp_stream_info_t * streamInfoTemp = ebpFileIngestThreadParams->streamInfos[i];
-                     
-                  streamInfoTemp->lastVideoChunkPTS = pes->header.PTS;
-                  streamInfoTemp->lastVideoChunkPTSValid = 1;
-               }
-            }
-            else
-            {
-               // this is an audio stream, so check that audio does not lag video by more than 3 seconds
-               if (pes->header.PTS > (streamInfo->lastVideoChunkPTS + 3 * 90000))  // PTS is 90kHz ticks
-               {
-                  LOG_ERROR_ARGS("FileIngestThread %d: FAIL: Audio PTS (%"PRId64") lags video PTS (%"PRId64") by more than 3 seconds: PID %d (%s)", 
-                     ebpFileIngestThreadParams->threadNum, pes->header.PTS, streamInfo->lastVideoChunkPTS, 
-                     esi->elementary_PID, getStreamTypeDesc (esi));
-
-                  streamInfo->streamPassFail = 0;
-               }
-            }
-         }
-      }
-   }
-      */
 
    pes_free(pes);
    return 1;

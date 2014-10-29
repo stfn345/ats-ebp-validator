@@ -37,20 +37,43 @@ ebp_boundary_info_t *setupDefaultBoundaryInfoArray()
    return boundaryInfoArray;
 }
 
-void modBoundaryInfoArray (ebp_descriptor_t * ebpDescriptor, ebp_boundary_info_t *boundaryInfoArray)
+void printBoundaryInfoArray(ebp_boundary_info_t *boundaryInfoArray)
+{
+   LOG_INFO ("      EBP Boundary Info:");
+
+   for (int i=0; i<EBP_NUM_PARTITIONS; i++)
+   {
+      if (boundaryInfoArray[i].isBoundary)
+      {
+         if (boundaryInfoArray[i].isImplicit)
+         {
+            LOG_INFO_ARGS ("         PARTITION %d: IMPLICIT, PID = %d", i, boundaryInfoArray[i].implicitPID);
+         }
+         else
+         {
+            LOG_INFO_ARGS ("         PARTITION %d: EXPLICIT", i);
+         }
+      }
+   }
+}
+
+int modBoundaryInfoArray (ebp_descriptor_t * ebpDescriptor, ebp_boundary_info_t *boundaryInfoArray)
 {
    for (int i=0; i<ebpDescriptor->num_partitions; i++)
    {
       ebp_partition_data_t *partition = (ebp_partition_data_t *)vqarray_get(ebpDescriptor->partition_data, i);
       if (partition->partition_id > 9)
       {
-         // GORP: error here
+         LOG_ERROR("Main:modBoundaryInfoArray: FAIL: PartitionID > 9 detected %s");
+         return -1;
       }
 
 
       boundaryInfoArray[partition->partition_id].isBoundary = partition->boundary_flag;
       boundaryInfoArray[partition->partition_id].isImplicit = !(partition->ebp_data_explicit_flag);
       boundaryInfoArray[partition->partition_id].implicitPID = partition->ebp_pid;
+
+      return 0;
    }
 }
 
@@ -364,7 +387,7 @@ int setupQueues(int numFiles, char **fileNames, program_stream_info_t *programSt
             returnCode = getVideoPID(&(programStreamInfo[fileIndex]), &PID, &streamType);
             if (returnCode != 0)
             {
-               // fatal error here -- no video stream
+               // no video stream -- this is legal
                LOG_INFO_ARGS ("Main:setupQueues: no video stream for file %d", fileIndex);
                continue;
             }
@@ -409,8 +432,14 @@ int setupQueues(int numFiles, char **fileNames, program_stream_info_t *programSt
          streamInfo->streamPassFail = 1;
 
          streamInfo->ebpBoundaryInfo = setupDefaultBoundaryInfoArray();
-         modBoundaryInfoArray (programStreamInfo[fileIndex].ebpDescriptors[streamIndex], 
+         returnCode = modBoundaryInfoArray (programStreamInfo[fileIndex].ebpDescriptors[streamIndex], 
             streamInfo->ebpBoundaryInfo);
+         if (returnCode != 0)
+         {
+            LOG_ERROR_ARGS ("Main:setupQueues: error modifying boundary info for file %d, stream %d", 
+               fileIndex, streamIndex);
+            return -1;
+         }
       }
    }
 
@@ -562,10 +591,11 @@ void analyzeResults(int numFiles, int numStreams, ebp_stream_info_t **streamInfo
 
          LOG_INFO_ARGS ("      PID %d (%s): %s", streamInfo->PID, (streamInfo->isVideo?"VIDEO":"AUDIO"),
             (streamInfo->streamPassFail?"PASS":"FAIL"));
+
+         printBoundaryInfoArray(streamInfo->ebpBoundaryInfo);
       }
       LOG_INFO ("");
 
-      // GORP: print out ebpBoundaryInfo
    }
 
    LOG_INFO ("TEST RESULTS END");
