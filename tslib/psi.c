@@ -33,6 +33,7 @@
 #include "section.h"
 #include "log.h"
 #include "crc32m.h"
+#include "vqarray.h"
 
 typedef struct {
    int type; 
@@ -116,6 +117,9 @@ void program_association_section_free(program_association_section_t *pas)
 
 int program_association_section_read(program_association_section_t *pas, uint8_t *buf, size_t buf_len)
 { 
+   vqarray_t *programs;
+   int num_programs = 0;
+
    if (pas == NULL || buf == NULL) 
    {
       SAFE_REPORT_TS_ERR(-1); 
@@ -171,21 +175,42 @@ int program_association_section_read(program_association_section_t *pas, uint8_t
    
    // read bytes 6,7
    
-   pas->_num_programs = (pas->section_length - 5 - 4) / 4; 
+   num_programs = (pas->section_length - 5 - 4) / 4;  // Programs listed in the PAT
    // explanation: section_length gives us the length from the end of section_length
    // we used 5 bytes for the mandatory section fields, and will use another 4 bytes for CRC
    // the remaining bytes contain program information, which is 4 bytes per iteration
    // It's much shorter in C :-)
+
+   // Read the program loop, but ignore the NIT PID "program"
+   programs = vqarray_new();
+   for (uint32_t i = 0; i < num_programs; i++)
+   {
+      program_info_t *prog = malloc(sizeof(program_info_t));
+      prog->program_number = bs_read_u16(b);
+      if (prog->program_number == 0) { // Skip the NIT PID program (not a real program)
+         free(prog);
+         bs_skip_u(b, 16);
+         continue;
+      }
+      bs_skip_u(b, 3);
+      prog->program_map_PID = bs_read_u(b, 13);
+      vqarray_add(programs, (vqarray_elem_t*)prog);
+   }
+
+   // This is our true number of programs
+   pas->_num_programs = vqarray_length(programs);
    
    if (pas->_num_programs > 1) LOG_WARN_ARGS("%zd programs found, but only SPTS is fully supported. Patches are welcome.", pas->_num_programs); 
    
+   // Copy form our vqarray into the native array
    pas->programs = malloc(pas->_num_programs * sizeof(program_info_t)); 
    for (uint32_t i = 0; i < pas->_num_programs; i++) 
    {
-      pas->programs[i].program_number = bs_read_u16(b); 
-      bs_skip_u(b, 3); 
-      pas->programs[i].program_map_PID = bs_read_u(b, 13);
+      program_info_t* prog = (program_info_t*)vqarray_pop(programs);
+      pas->programs[i] = *prog;
+      free(prog);
    }
+   vqarray_free(programs);
    
    pas->CRC_32 = bs_read_u32(b); 
    
