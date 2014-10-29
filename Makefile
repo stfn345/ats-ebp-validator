@@ -15,7 +15,7 @@ h264bitstream:
 		cd $@; ./autogen.sh; cd -; \
   fi; \
 	if [ ! -f $@/Makefile ]; then \
-		cd $@; ./configure; cd -; \
+		cd $@; ./configure --enable-static=yes --enable-shared=no; cd -; \
 	fi
 	$(MAKE) -C $@
 

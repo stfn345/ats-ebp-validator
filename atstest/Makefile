@@ -22,7 +22,7 @@ STRUCT_LIB = $(STRUCT_LIB_DIR)/libdatastruct.a
 ALL_LIBS = $(LOG_LIB) $(TSLIB_LIB) $(STRUCT_LIB)
 
 INCLUDES = -I . -I../tslib -I../common -I../libstructures/ -I../h264bitstream/ -I../logging/
-LIBS = -L . -L$(TSLIB_LIB_DIR) -ltslib -L../h264bitstream/.libs -lh264bitstream -L$(LOG_LIB_DIR) -llogging -L$(STRUCT_LIB_DIR) -ldatastruct -lm
+LIBS = -L . -L$(TSLIB_LIB_DIR) -ltslib -L../h264bitstream/.libs -lh264bitstream -L$(LOG_LIB_DIR) -llogging -L$(STRUCT_LIB_DIR) -ldatastruct -lpthread -lm
 
 CFLAGS  += $(INCLUDES)
 LDFLAGS += $(LIBS)
