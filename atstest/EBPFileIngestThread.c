@@ -548,8 +548,10 @@ void detectBoundary(int threadNum, ebp_t* ebp, ebp_stream_info_t *streamInfo, ui
    {
       uint8_t ebp_ext_partitions_temp = ebp->ebp_ext_partitions;
       ebp_ext_partitions_temp = ebp_ext_partitions_temp >> 1; // skip partition1d 0
-      ebp_ext_partitions_temp = ebp_ext_partitions_temp >> 1; // skip partition1d 1
-      ebp_ext_partitions_temp = ebp_ext_partitions_temp >> 1; // skip partition1d 2
+
+      // partiton 1 and 2 are not included in the extended partition mask, so skip them
+//      ebp_ext_partitions_temp = ebp_ext_partitions_temp >> 1; // skip partition1d 1
+//      ebp_ext_partitions_temp = ebp_ext_partitions_temp >> 1; // skip partition1d 2
 
       for (int i=3; i<EBP_NUM_PARTITIONS; i++)
       {

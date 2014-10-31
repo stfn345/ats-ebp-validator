@@ -1,3 +1,19 @@
+/*
+** Copyright (C) 2014  Cable Television Laboratories, Inc.
+** Contact: http://www.cablelabs.com/
+ 
+
+ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS BE LIABLE FOR ANY
+ DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+ ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
 
 #include <stdlib.h>
 #include <errno.h>
@@ -6,35 +22,35 @@
 #include <tpes.h>
 #include <ebp.h>
 #include <pthread.h>
+#include <getopt.h>
 
 #include "EBPCommon.h"
 #include "EBPFileIngestThread.h"
 #include "EBPSegmentAnalysisThread.h"
 
-#define TS_SIZE 188
+#include "ATSTestApp.h"
+
 
 static int g_bPATFound = 0;
 static int g_bPMTFound = 0;
 static int g_numVideoChunksFound = 0;
 
-typedef struct
-{
-   int numStreams;
-   uint32_t *stream_types;
-   uint32_t *PIDs;
-   ebp_descriptor_t **ebpDescriptors;
+static int pmt_processor(mpeg2ts_program_t *m2p, void *arg);
+static int pat_processor(mpeg2ts_stream_t *m2s, void *arg);
 
-} program_stream_info_t;
+static struct option long_options[] = { 
+    { "peek",	   no_argument,        NULL, 'p' }, 
+    { "help",       no_argument,        NULL, 'h' }, 
+}; 
 
-ebp_boundary_info_t *setupDefaultBoundaryInfoArray()
-{
-   ebp_boundary_info_t * boundaryInfoArray = (ebp_boundary_info_t *) calloc (EBP_NUM_PARTITIONS, sizeof(ebp_boundary_info_t));
+static char options[] = 
+"\t-p, --peek\n" 
+"\t-h, --help\n"; 
 
-   // by default, segments and fragments are assumed to be boundaries
-   boundaryInfoArray[1].isBoundary = 1;
-   boundaryInfoArray[2].isBoundary = 1;
-
-   return boundaryInfoArray;
+static void usage() 
+{ 
+    fprintf(stderr, "\nATSTestApp\n"); 
+    fprintf(stderr, "\nUsage: \nnATSTestApp [options] <input file 1> <input file 2> ... <input file N>\n\nOptions:\n%s\n", options);
 }
 
 void printBoundaryInfoArray(ebp_boundary_info_t *boundaryInfoArray)
@@ -68,13 +84,12 @@ int modBoundaryInfoArray (ebp_descriptor_t * ebpDescriptor, ebp_boundary_info_t 
          return -1;
       }
 
-
       boundaryInfoArray[partition->partition_id].isBoundary = partition->boundary_flag;
       boundaryInfoArray[partition->partition_id].isImplicit = !(partition->ebp_data_explicit_flag);
       boundaryInfoArray[partition->partition_id].implicitPID = partition->ebp_pid;
-
-      return 0;
    }
+
+   return 0;
 }
 
 static int pmt_processor(mpeg2ts_program_t *m2p, void *arg)
@@ -603,19 +618,41 @@ void analyzeResults(int numFiles, int numStreams, ebp_stream_info_t **streamInfo
    LOG_INFO ("");
 }
 
+// GORP: add peek option
+
 int main(int argc, char** argv) 
 {
-   LOG_INFO ("Main: entering");
-
    if (argc < 2)
    {
+      usage();
       return 1;
    }
+    
+   int c;
+   int long_options_index; 
 
-   int numFiles = argc-1;
-   for (int i=0; i<numFiles; i++)
+   int peekFlag = 0;
+
+   while ((c = getopt_long(argc, argv, "ph", long_options, &long_options_index)) != -1) 
    {
-      LOG_INFO_ARGS ("Main: FilePath %d = %s", i, argv[i+1]); 
+       switch (c) 
+       {
+         case 'p':
+            peekFlag = 1; 
+            break;         
+         case 'h':
+         default:
+            usage(); 
+            return 1;
+       }
+   }
+
+
+   LOG_INFO_ARGS ("Main: entering: optind = %d", optind);
+   int numFiles = argc-optind;
+   for (int i=optind; i<argc; i++)
+   {
+      LOG_INFO_ARGS ("Main: FilePath %d = %s", i, argv[i]); 
    }
 
    program_stream_info_t *programStreamInfo = (program_stream_info_t *)calloc (numFiles, 
@@ -626,18 +663,22 @@ int main(int argc, char** argv)
       filePassFails[i] = 1;
    }
 
-   int returnCode = prereadFiles(numFiles, &argv[1], programStreamInfo);
+   int returnCode = prereadFiles(numFiles, &argv[optind], programStreamInfo);
    if (returnCode != 0)
    {
       LOG_ERROR ("Main: FATAL ERROR during prereadFiles: exiting"); 
       exit (-1);
    }
 
+   if (peekFlag)
+   {
+      return 0;
+   }
 
    // array of fifo pointers
    ebp_stream_info_t **streamInfoArray = NULL;
    int numStreamsPerFile;
-   returnCode = setupQueues(numFiles, &argv[1], programStreamInfo, &streamInfoArray, &numStreamsPerFile);
+   returnCode = setupQueues(numFiles, &argv[optind], programStreamInfo, &streamInfoArray, &numStreamsPerFile);
    if (returnCode != 0)
    {
       LOG_ERROR ("Main: FATAL ERROR during setupQueues: exiting"); 
@@ -648,7 +689,7 @@ int main(int argc, char** argv)
    pthread_t **analysisThreads;
    pthread_attr_t threadAttr;
 
-   returnCode = startThreads(numFiles, numStreamsPerFile, streamInfoArray, &argv[1], filePassFails,
+   returnCode = startThreads(numFiles, numStreamsPerFile, streamInfoArray, &argv[optind], filePassFails,
       &fileIngestThreads, &analysisThreads, &threadAttr);
    if (returnCode != 0)
    {
@@ -665,7 +706,7 @@ int main(int argc, char** argv)
    }
 
    // analyze the pass fail results
-   analyzeResults(numFiles, numStreamsPerFile, streamInfoArray, &argv[1], filePassFails);
+   analyzeResults(numFiles, numStreamsPerFile, streamInfoArray, &argv[optind], filePassFails);
 
 
    returnCode = teardownQueues(numFiles, numStreamsPerFile, streamInfoArray);
