@@ -164,6 +164,34 @@ int ebp_validate_groups(const ebp_t *ebp)
    return returnCode;
 }
 
+ebp_t* ebp_copy(const ebp_t *ebp)
+{
+   ebp_t * ebpNew = ebp_new();
+         
+   ebpNew->ebp_fragment_flag = ebp->ebp_fragment_flag;
+   ebpNew->ebp_segment_flag = ebp->ebp_segment_flag;
+   ebpNew->ebp_sap_flag = ebp->ebp_sap_flag;
+   ebpNew->ebp_grouping_flag = ebp->ebp_grouping_flag;
+   ebpNew->ebp_time_flag = ebp->ebp_time_flag;
+   ebpNew->ebp_concealment_flag = ebp->ebp_concealment_flag;
+   ebpNew->ebp_extension_flag = ebp->ebp_extension_flag;
+   ebpNew->ebp_ext_partition_flag = ebp->ebp_ext_partition_flag;
+   ebpNew->ebp_sap_type = ebp->ebp_sap_type;
+   ebpNew->ebp_acquisition_time = ebp->ebp_acquisition_time;
+   ebpNew->ebp_ext_partitions = ebp->ebp_ext_partitions;
+
+   if (ebpNew->ebp_grouping_flag)
+   {
+      ebpNew->ebp_grouping_ids = vqarray_new();
+      for (int i=0; i<vqarray_length(ebp->ebp_grouping_ids); i++)
+      {
+         vqarray_add(ebpNew->ebp_grouping_ids, vqarray_get(ebp->ebp_grouping_ids, i));
+      }
+   }
+
+   return ebpNew;
+}
+
 int ebp_print(const ebp_t *ebp, char *str, size_t str_len)
 {
    return 1;
@@ -369,17 +397,13 @@ ebp_descriptor_t* ebp_descriptor_copy(const ebp_descriptor_t *ebp_in)
 void ebp_descriptor_print_stdout(const ebp_descriptor_t *ebp_desc)
 {
    printf ("EBP Descriptor:\n");
-   printf ("   tag = %d:\n", ebp_desc->descriptor.tag);
-   printf ("   length = %d:\n", ebp_desc->descriptor.length);
-   printf ("   num_partitions = %d:\n", ebp_desc->num_partitions);
-   printf ("   timescale_flag = %d:\n", ebp_desc->timescale_flag);
-   printf ("   ticks_per_second = %d:\n", ebp_desc->ticks_per_second);
-   printf ("   ebp_distance_width_minus_1 = %d:\n", ebp_desc->ebp_distance_width_minus_1);
+   printf ("   tag = %d, length = %d, timescale_flag = %d, ticks_per_second = %d, ebp_distance_width_minus_1 = %d\n", 
+      ebp_desc->descriptor.tag, ebp_desc->descriptor.length, 
+      ebp_desc->timescale_flag, ebp_desc->ticks_per_second, ebp_desc->ebp_distance_width_minus_1);
 
    int num_partitions = 0;
    if (ebp_desc->partition_data != NULL)
    {
-      printf ("   partition_data = %x\n", (uint32_t)ebp_desc->partition_data);
       num_partitions = vqarray_length(ebp_desc->partition_data);
       printf ("   num_partitions = %d\n", num_partitions);
 
@@ -388,15 +412,13 @@ void ebp_descriptor_print_stdout(const ebp_descriptor_t *ebp_desc)
          ebp_partition_data_t* partition = (ebp_partition_data_t*)vqarray_get(ebp_desc->partition_data, i);
 
          printf ("   partition[%d]:\n", i);
-         printf ("      ebp_data_explicit_flag = %d\n", partition->ebp_data_explicit_flag);
-         printf ("      representation_id_flag = %d\n", partition->representation_id_flag);
-         printf ("      partition_id = %d\n", partition->partition_id);
-         printf ("      ebp_pid = %d\n", partition->ebp_pid);
-         printf ("      boundary_flag = %d\n", partition->boundary_flag);
-         printf ("      ebp_distance = %d\n", partition->ebp_distance);
-         printf ("      sap_type_max = %d\n", partition->sap_type_max);
-         printf ("      acquisition_time_flag = %d\n", partition->acquisition_time_flag);
-         printf ("      representation_id = %"PRId64"\n", partition->representation_id);
+         printf ("      ebp_data_explicit_flag = %d, representation_id_flag = %d, partition_id = %d, ebp_pid = %d\n", 
+            partition->ebp_data_explicit_flag, partition->representation_id_flag, partition->partition_id,
+            partition->ebp_pid);
+         printf ("      boundary_flag = %d, ebp_distance = %d, sap_type_max = %d, acquisition_time_flag = %d, \
+                 representation_id = %"PRId64"\n", 
+            partition->boundary_flag, partition->ebp_distance, partition->sap_type_max, 
+            partition->acquisition_time_flag, partition->representation_id);
       }
    }
    else

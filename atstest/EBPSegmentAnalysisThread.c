@@ -40,9 +40,9 @@ void *EBPSegmentAnalysisThreadProc(void *threadParams)
    ebp_segment_analysis_thread_params_t *ebpSegmentAnalysisThreadParams = (ebp_segment_analysis_thread_params_t *)threadParams;
    LOG_INFO_ARGS("EBPSegmentAnalysisThread %d: starting...", ebpSegmentAnalysisThreadParams->threadID);
 
-   int *fifoNotActive = (int *) calloc (ebpSegmentAnalysisThreadParams->numStreamInfos, sizeof (int));
+   int *fifoNotActive = (int *) calloc (ebpSegmentAnalysisThreadParams->numFiles, sizeof (int));
 
-   returnCode = syncIncomingStreams (ebpSegmentAnalysisThreadParams->threadID, ebpSegmentAnalysisThreadParams->numStreamInfos, 
+   returnCode = syncIncomingStreams (ebpSegmentAnalysisThreadParams->threadID, ebpSegmentAnalysisThreadParams->numFiles, 
       ebpSegmentAnalysisThreadParams->streamInfos, fifoNotActive);
    if (returnCode != 0)
    {
@@ -64,7 +64,7 @@ void *EBPSegmentAnalysisThreadProc(void *threadParams)
       int acquisitionTimePresent = 0;
       int acquisitionTimeSet = 0;
 
-      for (int i=0; i<ebpSegmentAnalysisThreadParams->numStreamInfos; i++)
+      for (int i=0; i<ebpSegmentAnalysisThreadParams->numFiles; i++)
       {
          ebp_stream_info_t *streamInfo = ebpSegmentAnalysisThreadParams->streamInfos[i];
          if (fifoNotActive[i] || streamInfo == NULL)
@@ -104,7 +104,7 @@ void *EBPSegmentAnalysisThreadProc(void *threadParams)
                LOG_INFO_ARGS ("EBPSegmentAnalysisThread %d: POPPED PTS = %"PRId64" from fifo %d (PID %d), descriptor = %x", 
                   ebpSegmentAnalysisThreadParams->threadID, ebpSegmentInfo->PTS, i, streamInfo->PID, 
                   (unsigned int)(ebpSegmentInfo->latestEBPDescriptor));
-
+                  
                if (!nextPTSSet)
                {
                   nextPTS = ebpSegmentInfo->PTS;
@@ -176,7 +176,7 @@ void *EBPSegmentAnalysisThreadProc(void *threadParams)
    pthread_exit(NULL);
 }
 
-int syncIncomingStreams (int threadID, int numStreamInfos, ebp_stream_info_t **streamInfos, int *fifoNotActive)
+int syncIncomingStreams (int threadID, int numFiles, ebp_stream_info_t **streamInfos, int *fifoNotActive)
 {
    int64_t startPTS = 0;
    int returnCode = 0;
@@ -186,7 +186,7 @@ int syncIncomingStreams (int threadID, int numStreamInfos, ebp_stream_info_t **s
 
    // cycle through all fifos and peek at starting PTS -- take the latest of these as the starting 
    // PTS for the stream analysis
-   for (int i=0; i<numStreamInfos; i++)
+   for (int i=0; i<numFiles; i++)
    {
       ebp_stream_info_t *streamInfo = streamInfos[i];
       if (fifoNotActive[i] || streamInfo == NULL)
@@ -229,7 +229,7 @@ int syncIncomingStreams (int threadID, int numStreamInfos, ebp_stream_info_t **s
    LOG_INFO_ARGS ("EBPSegmentAnalysisThread:syncIncomingStreams %d: starting PTS = %"PRId64"", threadID, startPTS);               
 
    // next cycle through all queues and peek at PTS, popping off ones that are prior to the analysis start PTS
-   for (int i=0; i<numStreamInfos; i++)
+   for (int i=0; i<numFiles; i++)
    {
       ebp_stream_info_t *streamInfo = streamInfos[i];
       if (fifoNotActive[i] || streamInfo == NULL)

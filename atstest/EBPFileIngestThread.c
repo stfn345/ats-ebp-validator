@@ -66,11 +66,14 @@ static int validate_pes_packet(pes_packet_t *pes, elementary_stream_info_t *esi,
 
    ebp_file_ingest_thread_params_t *ebpFileIngestThreadParams = (ebp_file_ingest_thread_params_t *)arg;
 
+   int arrayIndex = get2DArrayIndex (ebpFileIngestThreadParams->threadNum, 0, ebpFileIngestThreadParams->numStreams);    
+   ebp_stream_info_t **streamInfos = &((ebpFileIngestThreadParams->allStreamInfos)[arrayIndex]);
+
    thread_safe_fifo_t *fifo = NULL;
    int fifoIndex = -1;
-   findFIFO (esi->elementary_PID, ebpFileIngestThreadParams->streamInfos, ebpFileIngestThreadParams->numStreamInfos,
+   findFIFO (esi->elementary_PID, streamInfos, ebpFileIngestThreadParams->numStreams,
       &fifo, &fifoIndex);
-   ebp_stream_info_t * streamInfo = ebpFileIngestThreadParams->streamInfos[fifoIndex];
+   ebp_stream_info_t * streamInfo = streamInfos[fifoIndex];
    
    if (fifo == NULL)
    {
@@ -85,11 +88,17 @@ static int validate_pes_packet(pes_packet_t *pes, elementary_stream_info_t *esi,
    }
 
    ebp_t* ebp = getEBP(ts, streamInfo, ebpFileIngestThreadParams->threadNum);
+   // GORP: testing -- removes ebp from audio to test implicit triggering
+/*   if (esi->elementary_PID != 481)
+   {
+      ebp = NULL;
+   }
+*/
    if (ebp != NULL)
    {
       LOG_INFO_ARGS("FileIngestThread %d: Found EBP data in transport packet: PID %d (%s)", 
          ebpFileIngestThreadParams->threadNum, esi->elementary_PID, getStreamTypeDesc (esi));
-      ebp_print_stdout(ebp);
+//      ebp_print_stdout(ebp);
          
       if (ebp_validate_groups(ebp) != 0)
       {
@@ -105,6 +114,8 @@ static int validate_pes_packet(pes_packet_t *pes, elementary_stream_info_t *esi,
    // isBoundary is an array indexed by PartitionId -- we will analyze the segment once
    // for each partition that triggered a boundary
    int *isBoundary = (int *)calloc (EBP_NUM_PARTITIONS, sizeof(int));
+ //  LOG_INFO_ARGS("EBPFileIngestThread %d: Calling detectBoundary. (PID %d)", 
+ //           ebpFileIngestThreadParams->threadNum, esi->elementary_PID);
    detectBoundary(ebpFileIngestThreadParams->threadNum, ebp, streamInfo, pes->header.PTS, isBoundary);
 
    int lastVideoPTSSet = 0;
@@ -127,18 +138,19 @@ static int validate_pes_packet(pes_packet_t *pes, elementary_stream_info_t *esi,
             streamInfo->streamPassFail = 0;
          }
 
+
          // do the following once only -- use flag lastVideoPTSSet to tell if already done
          if ((lastVideoPTSSet == 0) && IS_VIDEO_STREAM(esi->stream_type))
          {
             // if this is video, set lastVideoPTS in audio fifos
-            for (int ii=0; ii<ebpFileIngestThreadParams->numStreamInfos; ii++)
+            for (int ii=0; ii<ebpFileIngestThreadParams->numStreams; ii++)
             {
                if (ii == fifoIndex)
                {
                   continue;
                }
 
-               ebp_stream_info_t * streamInfoTemp = ebpFileIngestThreadParams->streamInfos[ii];
+               ebp_stream_info_t * streamInfoTemp = streamInfos[ii];
                      
                streamInfoTemp->lastVideoChunkPTS = pes->header.PTS;
                streamInfoTemp->lastVideoChunkPTSValid = 1;
@@ -147,7 +159,7 @@ static int validate_pes_packet(pes_packet_t *pes, elementary_stream_info_t *esi,
          }
          else if (IS_AUDIO_STREAM(esi->stream_type))
          {
-            // this is an audio stream, so check that audio does not lag video by more than 3 seconds
+           // this is an audio stream, so check that audio does not lag video by more than 3 seconds
             if (pes->header.PTS > (streamInfo->lastVideoChunkPTS + 3 * 90000))  // PTS is 90kHz ticks
             {
                LOG_ERROR_ARGS("FileIngestThread %d: FAIL: Audio PTS (%"PRId64") lags video PTS (%"PRId64") by more than 3 seconds: PID %d (%s)", 
@@ -158,9 +170,13 @@ static int validate_pes_packet(pes_packet_t *pes, elementary_stream_info_t *esi,
             }
             streamInfo->lastVideoChunkPTSValid = 0;
          }
-         
-         triggerImplicitBoundaries (ebpFileIngestThreadParams->threadNum, ebpFileIngestThreadParams->streamInfos, 
-            ebpFileIngestThreadParams->numStreamInfos, fifoIndex, pes->header.PTS, (uint8_t) i);
+
+         triggerImplicitBoundaries (ebpFileIngestThreadParams->threadNum, 
+            ebpFileIngestThreadParams->allStreamInfos, 
+            ebpFileIngestThreadParams->numStreams, ebpFileIngestThreadParams->numFiles, 
+            fifoIndex, pes->header.PTS, (uint8_t) i /* partition ID */,
+            ebpFileIngestThreadParams->threadNum);
+
       }
    }
    
@@ -170,7 +186,6 @@ static int validate_pes_packet(pes_packet_t *pes, elementary_stream_info_t *esi,
    }
 
    free (isBoundary);
-
 
    pes_free(pes);
    return 1;
@@ -243,9 +258,97 @@ ebp_descriptor_t* getEBPDescriptor (elementary_stream_info_t *esi)
    for (int i=0; i<vqarray_length(descriptors); i++)
    {
       descriptor_t* descriptor = vqarray_get(descriptors, i);
+/*      if (descriptor == NULL)
+      {
+         printf ("descriptor %d NULL\n", i);
+      }
+      else
+      {
+         printf ("descriptor %d: tag = %d\n", i, descriptor->tag);
+      }
+      */
+
       if (descriptor != NULL && descriptor->tag == EBP_DESCRIPTOR)
       {
          return (ebp_descriptor_t*)descriptor;
+      }
+   }
+
+   return NULL;
+}
+
+component_name_descriptor_t* getComponentNameDescriptor (elementary_stream_info_t *esi)
+{
+   vqarray_t *descriptors = esi->descriptors;
+
+   for (int i=0; i<vqarray_length(descriptors); i++)
+   {
+      descriptor_t* descriptor = vqarray_get(descriptors, i);
+/*      if (descriptor == NULL)
+      {
+         printf ("descriptor %d NULL\n", i);
+      }
+      else
+      {
+         printf ("descriptor %d: tag = %d\n", i, descriptor->tag);
+      }
+      */
+
+      if (descriptor != NULL && descriptor->tag == COMPONENT_NAME_DESCRIPTOR)
+      {
+         return (component_name_descriptor_t*)descriptor;
+      }
+   }
+
+   return NULL;
+}
+
+ac3_descriptor_t* getAC3Descriptor (elementary_stream_info_t *esi)
+{
+   vqarray_t *descriptors = esi->descriptors;
+
+   for (int i=0; i<vqarray_length(descriptors); i++)
+   {
+      descriptor_t* descriptor = vqarray_get(descriptors, i);
+/*      if (descriptor == NULL)
+      {
+         printf ("descriptor %d NULL\n", i);
+      }
+      else
+      {
+         printf ("descriptor %d: tag = %d\n", i, descriptor->tag);
+      }
+      */
+
+      if (descriptor != NULL && descriptor->tag == AC3_DESCRIPTOR)
+      {
+         return (ac3_descriptor_t*)descriptor;
+      }
+   }
+
+   return NULL;
+}
+
+language_descriptor_t* getLanguageDescriptor (elementary_stream_info_t *esi)
+{
+   vqarray_t *descriptors = esi->descriptors;
+
+   for (int i=0; i<vqarray_length(descriptors); i++)
+   {
+      descriptor_t* descriptor = vqarray_get(descriptors, i);
+/*      if (descriptor == NULL)
+      {
+         printf ("descriptor %d NULL\n", i);
+      }
+      else
+      {
+         printf ("descriptor %d: tag = %d\n", i, descriptor->tag);
+      }
+      */
+
+      if (descriptor != NULL && descriptor->tag == ISO_639_LANGUAGE_DESCRIPTOR)
+      {
+         return (language_descriptor_t*)descriptor;
       }
    }
 
@@ -399,13 +502,13 @@ void *EBPFileIngestThreadProc(void *threadParams)
    return NULL;
 }
 
-void findFIFO (uint32_t PID, ebp_stream_info_t **streamInfos, int numStreamInfos,
+void findFIFO (uint32_t PID, ebp_stream_info_t **streamInfos, int numStreams,
    thread_safe_fifo_t**fifoOut, int *fifoIndex)
 {
    *fifoOut = NULL;
    *fifoIndex = -1;
 
-   for (int i=0; i<numStreamInfos; i++)
+   for (int i=0; i<numStreams; i++)
    {
       if (streamInfos[i] != NULL)
       {
@@ -432,9 +535,12 @@ int postToFIFO  (uint64_t PTS, uint32_t sapType, ebp_t *ebp, ebp_descriptor_t *e
    // make a copy of ebp_descriptor since this mem could be freed before being prcessed by analysis thread
    ebpSegmentInfo->latestEBPDescriptor = ebp_descriptor_copy(ebpDescriptor);  
    
+   int arrayIndex = get2DArrayIndex (ebpFileIngestThreadParams->threadNum, 0, ebpFileIngestThreadParams->numStreams);
+   ebp_stream_info_t **streamInfos = &((ebpFileIngestThreadParams->allStreamInfos)[arrayIndex]);
+
    thread_safe_fifo_t* fifo = NULL;
    int fifoIndex = -1;
-   findFIFO (PID, ebpFileIngestThreadParams->streamInfos, ebpFileIngestThreadParams->numStreamInfos, &fifo, &fifoIndex);
+   findFIFO (PID, streamInfos, ebpFileIngestThreadParams->numStreams, &fifo, &fifoIndex);
    if (fifo == NULL)
    {
       // this should never happen
@@ -450,28 +556,40 @@ int postToFIFO  (uint64_t PTS, uint32_t sapType, ebp_t *ebp, ebp_descriptor_t *e
    {
       LOG_ERROR_ARGS ("EBPFileIngestThread %d: FATAL error %d calling fifo_push on fifo %d (PID %d)", 
          ebpFileIngestThreadParams->threadNum, 
-         returnCode, (ebpFileIngestThreadParams->streamInfos[fifoIndex])->fifo->id, PID);
+         returnCode, (streamInfos[fifoIndex])->fifo->id, PID);
       exit (-1);
    }
 
    return 0;
 }
 
-void triggerImplicitBoundaries (int threadNum, ebp_stream_info_t **streamInfoArray, int numStreams,
-   int currentStreamInfoIndex, uint64_t PTS, uint8_t partitionId)
+void triggerImplicitBoundaries (int threadNum, ebp_stream_info_t **streamInfoArray, int numStreams, int numFiles,
+   int currentStreamIndex, uint64_t PTS, uint8_t partitionId, int currentFileIndex)
 {
-   for (int i=0; i<numStreams; i++)
-   {
-      if (i == currentStreamInfoIndex) continue;
-   
-      ebp_boundary_info_t *ebpBoundaryInfo = streamInfoArray[i]->ebpBoundaryInfo;
+   uint32_t currentPID = streamInfoArray[get2DArrayIndex (currentFileIndex, currentStreamIndex, numStreams)]->PID;
 
-      if (ebpBoundaryInfo[partitionId].isBoundary && 
-         ebpBoundaryInfo[partitionId].isImplicit &&
-         (ebpBoundaryInfo[partitionId].implicitPID == streamInfoArray[currentStreamInfoIndex]->PID))
+   for (int fileIndex=0; fileIndex<numFiles; fileIndex++)
+   {
+      for (int streamIndex=0; streamIndex<numStreams; streamIndex++)
       {
-         ebpBoundaryInfo[partitionId].lastImplicitPTS = PTS;
-         ebpBoundaryInfo[partitionId].isLastImplicitPTSValid = 1;
+         int arrayIndex = get2DArrayIndex (fileIndex, streamIndex, numStreams);
+
+         if (streamIndex == currentStreamIndex && fileIndex == currentFileIndex) continue;
+      
+         ebp_boundary_info_t *ebpBoundaryInfo = streamInfoArray[arrayIndex]->ebpBoundaryInfo;
+
+         if (ebpBoundaryInfo[partitionId].isBoundary && 
+            ebpBoundaryInfo[partitionId].isImplicit &&
+            (ebpBoundaryInfo[partitionId].implicitFileIndex == currentFileIndex) &&
+            (ebpBoundaryInfo[partitionId].implicitPID == currentPID))
+         {
+            LOG_INFO_ARGS("EBPFileIngestThread %d: Triggering implicit boundary", 
+                     currentFileIndex);
+               
+            uint64_t *PTSTemp = (uint64_t *)malloc(sizeof(uint64_t));
+            *PTSTemp = PTS;
+            varray_insert(ebpBoundaryInfo[partitionId].queueLastImplicitPTS, 0, PTSTemp);
+         }
       }
    }
 }
@@ -486,13 +604,24 @@ void detectBoundary(int threadNum, ebp_t* ebp, ebp_stream_info_t *streamInfo, ui
    // first check for implicit boundaries
    for (int i=1; i<EBP_NUM_PARTITIONS; i++)  // skip partition 0
    {
+
       if (ebpBoundaryInfo[i].isBoundary && 
          ebpBoundaryInfo[i].isImplicit && 
-         ebpBoundaryInfo[i].isLastImplicitPTSValid &&
-         (PTS > ebpBoundaryInfo[i].lastImplicitPTS))
+         varray_length(ebpBoundaryInfo[i].queueLastImplicitPTS) != 0)
       {
-         isBoundary[i] = 1;
-         ebpBoundaryInfo[i].isLastImplicitPTSValid = 0;
+         uint64_t *PTSTemp = (uint64_t *) varray_peek(ebpBoundaryInfo[i].queueLastImplicitPTS);
+/*         if (i == 1 || i == 2)
+         {
+            LOG_INFO_ARGS("EBPFileIngestThread %d: detectBoundary partition %d: lastImplicitPTS = %"PRId64", PTS = %"PRId64" (PID %d)", 
+                  threadNum, i, *PTSTemp, PTS, streamInfo->PID);
+         }
+         */
+
+         if (PTS > *PTSTemp)
+         {
+            varray_pop(ebpBoundaryInfo[i].queueLastImplicitPTS);
+            isBoundary[i] = 1;
+         }
       }
    }
 
@@ -550,9 +679,6 @@ void detectBoundary(int threadNum, ebp_t* ebp, ebp_stream_info_t *streamInfo, ui
       ebp_ext_partitions_temp = ebp_ext_partitions_temp >> 1; // skip partition1d 0
 
       // partiton 1 and 2 are not included in the extended partition mask, so skip them
-//      ebp_ext_partitions_temp = ebp_ext_partitions_temp >> 1; // skip partition1d 1
-//      ebp_ext_partitions_temp = ebp_ext_partitions_temp >> 1; // skip partition1d 2
-
       for (int i=3; i<EBP_NUM_PARTITIONS; i++)
       {
          if (ebp_ext_partitions_temp & 0x1)
@@ -584,16 +710,19 @@ void detectBoundary(int threadNum, ebp_t* ebp, ebp_stream_info_t *streamInfo, ui
 
 void cleanupAndExit(ebp_file_ingest_thread_params_t *ebpFileIngestThreadParams)
 {
+   int arrayIndex = get2DArrayIndex (ebpFileIngestThreadParams->threadNum, 0, ebpFileIngestThreadParams->numStreams);
+   ebp_stream_info_t **streamInfos = &(ebpFileIngestThreadParams->allStreamInfos[arrayIndex]);
+
    int returnCode = 0;
    void *element = NULL;
-   for (int i=0; i<ebpFileIngestThreadParams->numStreamInfos; i++)
+   for (int i=0; i<ebpFileIngestThreadParams->numStreams; i++)
    {
-      returnCode = fifo_push (ebpFileIngestThreadParams->streamInfos[i]->fifo, element);
+      returnCode = fifo_push (streamInfos[i]->fifo, element);
       if (returnCode != 0)
       {
          LOG_ERROR_ARGS ("EBPFileIngestThread %d: FATAL error %d calling fifo_push on fifo %d (PID %d) during cleanup", 
             ebpFileIngestThreadParams->threadNum, returnCode, 
-            (ebpFileIngestThreadParams->streamInfos[i])->fifo->id, (ebpFileIngestThreadParams->streamInfos[i])->PID);
+            streamInfos[i]->fifo->id, streamInfos[i]->PID);
 
          // fatal error: exit
          exit(-1);

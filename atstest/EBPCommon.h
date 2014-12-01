@@ -20,6 +20,8 @@
 
 #include "ThreadSafeFIFO.h"
 #include "log.h"
+#include "varray.h"
+
 
 
 #define EBP_NUM_PARTITIONS 10  // 0 - 9
@@ -28,10 +30,11 @@ typedef struct
 {
    int isBoundary;
    int isImplicit;
+
+   int implicitFileIndex;  // implicit boundaries can trigger off of other files
    uint32_t implicitPID; // only applicable if implicit -- default is video PID
 
-   uint64_t lastImplicitPTS;
-   int isLastImplicitPTSValid;
+   varray_t* queueLastImplicitPTS;
 
 } ebp_boundary_info_t;
 
@@ -50,6 +53,8 @@ typedef struct
    thread_safe_fifo_t *fifo;
 
 } ebp_stream_info_t;
+
+int get2DArrayIndex (int fileIndex, int streamIndex, int numStreams);
 
 
 #endif  // __H_EBP_COMMON_AGS6Q76

@@ -24,8 +24,10 @@ typedef struct
 {
     int threadNum;
     char *filePath;
-    int numStreamInfos;
-    ebp_stream_info_t **streamInfos;
+    int numStreams;
+    int numFiles;
+
+    ebp_stream_info_t **allStreamInfos;
 
     int *filePassFail;
 
@@ -37,12 +39,16 @@ int postToFIFO (uint64_t PTS, uint32_t sapType, ebp_t *ebp, ebp_descriptor_t *eb
                  uint8_t partitionId);
 
 ebp_descriptor_t* getEBPDescriptor (elementary_stream_info_t *esi);
-void findFIFO (uint32_t PID, ebp_stream_info_t **streamInfos, int numStreamInfos,
+component_name_descriptor_t* getComponentNameDescriptor (elementary_stream_info_t *esi);
+language_descriptor_t* getLanguageDescriptor (elementary_stream_info_t *esi);
+ac3_descriptor_t* getAC3Descriptor (elementary_stream_info_t *esi);
+
+void findFIFO (uint32_t PID, ebp_stream_info_t **streamInfos, int numStreams,
    thread_safe_fifo_t**fifoOut, int *fifoIndex);
 ebp_t* getEBP(ts_packet_t *ts, ebp_stream_info_t * streamInfo, int threadNum);
 void detectBoundary(int threadNum, ebp_t* ebp, ebp_stream_info_t *streamInfo, uint64_t PTS, int *isBoundary);
-void triggerImplicitBoundaries (int threadNum, ebp_stream_info_t **streamInfoArray, int numStreams,
-   int currentStreamInfoIndex, uint64_t PTS, uint8_t partitionId);
+void triggerImplicitBoundaries (int threadNum, ebp_stream_info_t **streamInfoArray, int numStreams, int numFiles,
+   int currentStreamInfoIndex, uint64_t PTS, uint8_t partitionId, int fileIndex);
 
 void *EBPFileIngestThreadProc(void *threadParams);
 

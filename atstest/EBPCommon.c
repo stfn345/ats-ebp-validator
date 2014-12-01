@@ -15,34 +15,11 @@
  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef __H_EBPSEGMENTANALYSISTHREAD_67511FLKKJF
-#define __H_EBPSEGMENTANALYSISTHREAD_67511FLKKJF
 
 #include "EBPCommon.h"
 
-typedef struct 
-{  
-   int threadID;
-   int numFiles;
-   ebp_stream_info_t **streamInfos;
-
-} ebp_segment_analysis_thread_params_t;
-
-typedef struct
+int get2DArrayIndex (int fileIndex, int streamIndex, int numStreams)
 {
-   int64_t PTS;
-   uint32_t SAPType;
-   uint8_t partitionId;
+   return fileIndex * numStreams + streamIndex;
+}
 
-   ebp_t *EBP;
-   ebp_descriptor_t *latestEBPDescriptor;
-
-} ebp_segment_info_t;
-
-
-void cleanupEBPSegmentInfo (ebp_segment_info_t *ebpSegmentInfo);
-void *EBPSegmentAnalysisThreadProc(void *threadParams);
-int syncIncomingStreams (int threadID, int numFiles, ebp_stream_info_t **streamInfos, int *fifoNotActive);
-
-
-#endif  // __H_EBPSEGMENTANALYSISTHREAD_67511FLKKJF

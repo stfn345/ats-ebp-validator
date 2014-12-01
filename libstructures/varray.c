@@ -108,9 +108,16 @@ void varray_set(varray_t* v, int i, varray_elem_t* e)
 */
 void varray_insert(varray_t* v, int i, varray_elem_t* e)
 {
-    if (i < 0) { return; }
+    if (i < 0) 
+    { 
+       return; 
+    }
+
     _varray_expand_to_length(v, _max(v->length+1, i+1));
-    if (i < v->length) { memmove(&(v->array[i+1]), &(v->array[i]), (v->length-i) * sizeof(varray_elem_t*)); }
+    if (i < v->length) 
+    { 
+       memmove(&(v->array[i+1]), &(v->array[i]), (v->length-i) * sizeof(varray_elem_t*)); 
+    }
     v->array[i] = e;
     v->length = _max(v->length+1, i+1);
 }
@@ -152,7 +159,12 @@ void varray_push(varray_t* v, varray_elem_t* e) { varray_insert(v, varray_length
    @param v the array
    @return the element
 */
-varray_elem_t* varray_pop(varray_t* v) { varray_elem_t* e = varray_get(v, varray_length(v)-1); varray_remove(v, varray_length(v)-1); return e; }
+varray_elem_t* varray_pop(varray_t* v) 
+{ 
+   varray_elem_t* e = varray_get(v, varray_length(v)-1); 
+   varray_remove(v, varray_length(v)-1); 
+   return e; 
+}
 
 /**
    Return (but dont remove) the element at the end of the array.

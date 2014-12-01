@@ -41,6 +41,7 @@ int ebp_read(ebp_t *ebp, ts_scte128_private_data_t *scte128);
 int ebp_print(const ebp_t *ebp, char *str, size_t str_len);
 void ebp_print_stdout(const ebp_t *ebp);
 int ebp_validate_groups(const ebp_t *ebp);
+ebp_t* ebp_copy(const ebp_t *ebp);
 void parseNTPTimestamp(uint64_t ntpTime, uint32_t *numSeconds, float *fractionalSecond);
 
 typedef struct {
