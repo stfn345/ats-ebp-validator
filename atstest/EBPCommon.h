@@ -25,6 +25,8 @@
 
 
 #define EBP_NUM_PARTITIONS 10  // 0 - 9
+#define SAP_STREAM_TYPE_NOT_SUPPORTED  99
+#define SAP_STREAM_TYPE_ERROR  100
 
 typedef struct
 {
@@ -51,6 +53,8 @@ typedef struct
    int streamPassFail;  // 1 == pass, 0 == fail
 
    thread_safe_fifo_t *fifo;
+
+   int ebpChunkCntr;
 
 } ebp_stream_info_t;
 

@@ -4,7 +4,6 @@
  
 
  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
- ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
  WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
  DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS BE LIABLE FOR ANY
  DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
@@ -13,12 +12,14 @@
  ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
  */
 
 #ifndef __H_EBPFILEINGESTTHREAD_67511FLKKJF
 #define __H_EBPFILEINGESTTHREAD_67511FLKKJF
 
 #include "ThreadSafeFIFO.h"
+#include <tpes.h>
 
 typedef struct 
 {
@@ -38,6 +39,8 @@ int postToFIFO (uint64_t PTS, uint32_t sapType, ebp_t *ebp, ebp_descriptor_t *eb
                  uint32_t PID, ebp_file_ingest_thread_params_t *ebpFileIngestThreadParams, 
                  uint8_t partitionId);
 
+uint64_t adjustPTSForTests (uint64_t PTSIn, int fileIndex, ebp_stream_info_t * streamInfo);
+
 ebp_descriptor_t* getEBPDescriptor (elementary_stream_info_t *esi);
 component_name_descriptor_t* getComponentNameDescriptor (elementary_stream_info_t *esi);
 language_descriptor_t* getLanguageDescriptor (elementary_stream_info_t *esi);
@@ -46,10 +49,18 @@ ac3_descriptor_t* getAC3Descriptor (elementary_stream_info_t *esi);
 void findFIFO (uint32_t PID, ebp_stream_info_t **streamInfos, int numStreams,
    thread_safe_fifo_t**fifoOut, int *fifoIndex);
 ebp_t* getEBP(ts_packet_t *ts, ebp_stream_info_t * streamInfo, int threadNum);
-void detectBoundary(int threadNum, ebp_t* ebp, ebp_stream_info_t *streamInfo, uint64_t PTS, int *isBoundary);
+int detectBoundary(int threadNum, ebp_t* ebp, ebp_stream_info_t *streamInfo, uint64_t PTS, int *isBoundary);
 void triggerImplicitBoundaries (int threadNum, ebp_stream_info_t **streamInfoArray, int numStreams, int numFiles,
    int currentStreamInfoIndex, uint64_t PTS, uint8_t partitionId, int fileIndex);
 
 void *EBPFileIngestThreadProc(void *threadParams);
+
+uint32_t getSAPType(pes_packet_t *pes, ts_packet_t *first_ts,  uint32_t streamType);
+uint32_t getSAPType_AVC(pes_packet_t *pes, ts_packet_t *first_ts);
+uint32_t getSAPType_MPEG2_AAC(pes_packet_t *pes, ts_packet_t *first_ts);
+uint32_t getSAPType_MPEG4_AAC(pes_packet_t *pes, ts_packet_t *first_ts);
+uint32_t getSAPType_AC3(pes_packet_t *pes, ts_packet_t *first_ts);
+uint32_t getSAPType_MPEG2_VIDEO(pes_packet_t *pes, ts_packet_t *first_ts);
+
 
 #endif  // __H_EBPFILEINGESTTHREAD_67511FLKKJF

@@ -27,10 +27,13 @@
 #include <tpes.h>
 #include <ebp.h>
 
+#include "h264_stream.h"
 
 #include "EBPSegmentAnalysisThread.h"
 #include "EBPFileIngestThread.h"
 #include "EBPThreadLogging.h"
+
+#include "ATSTestDefines.h"
 
 
 static char *STREAM_TYPE_UNKNOWN = "UNKNOWN";
@@ -56,8 +59,8 @@ static char* getStreamTypeDesc (elementary_stream_info_t *esi)
 static int validate_pes_packet(pes_packet_t *pes, elementary_stream_info_t *esi, vqarray_t *ts_queue, void *arg)
 {
    // Get the first TS packet and check it for EBP
-   ts_packet_t *ts = (ts_packet_t*)vqarray_get(ts_queue,0);
-   if (ts == NULL)
+   ts_packet_t *first_ts = (ts_packet_t*)vqarray_get(ts_queue,0);
+   if (first_ts == NULL)
    {
       // GORP: should this be an error?
       pes_free(pes);
@@ -87,13 +90,16 @@ static int validate_pes_packet(pes_packet_t *pes, elementary_stream_info_t *esi,
       return 1;
    }
 
-   ebp_t* ebp = getEBP(ts, streamInfo, ebpFileIngestThreadParams->threadNum);
-   // GORP: testing -- removes ebp from audio to test implicit triggering
-/*   if (esi->elementary_PID != 481)
+   ebp_t* ebp = getEBP(first_ts, streamInfo, ebpFileIngestThreadParams->threadNum);
+   if (ATS_TEST_CASE_AUDIO_IMPLICIT_TRIGGER || ATS_TEST_CASE_AUDIO_XFILE_IMPLICIT_TRIGGER)
    {
-      ebp = NULL;
+      // testing -- removes ebp from audio to test implicit triggering
+      if (esi->elementary_PID == 482)
+      {
+         ebp = NULL;
+      }
    }
-*/
+
    if (ebp != NULL)
    {
       LOG_INFO_ARGS("FileIngestThread %d: Found EBP data in transport packet: PID %d (%s)", 
@@ -116,18 +122,49 @@ static int validate_pes_packet(pes_packet_t *pes, elementary_stream_info_t *esi,
    int *isBoundary = (int *)calloc (EBP_NUM_PARTITIONS, sizeof(int));
  //  LOG_INFO_ARGS("EBPFileIngestThread %d: Calling detectBoundary. (PID %d)", 
  //           ebpFileIngestThreadParams->threadNum, esi->elementary_PID);
-   detectBoundary(ebpFileIngestThreadParams->threadNum, ebp, streamInfo, pes->header.PTS, isBoundary);
+   int boundaryDetected = detectBoundary(ebpFileIngestThreadParams->threadNum, ebp, streamInfo, pes->header.PTS, isBoundary);
 
    int lastVideoPTSSet = 0;
+
+
+   if (boundaryDetected)
+   {
+      streamInfo->ebpChunkCntr++;
+      pes->header.PTS = adjustPTSForTests (pes->header.PTS, ebpFileIngestThreadParams->threadNum, 
+         streamInfo);
+   }
 
    for (uint8_t i=0; i<EBP_NUM_PARTITIONS; i++)
    {
       if (isBoundary[i])
       {
-         uint32_t sapType = 0;  // GORP: fill in
+         uint32_t sapType = getSAPType(pes, first_ts, esi->stream_type);
+
          ebp_descriptor_t* ebpDescriptor = getEBPDescriptor (esi);  // could be null
 
-         ebp_t* ebp_copy = getEBP(ts, streamInfo, ebpFileIngestThreadParams->threadNum);
+         ebp_t* ebp_copy = getEBP(first_ts, streamInfo, ebpFileIngestThreadParams->threadNum);
+
+         if (ATS_TEST_CASE_ACQUISITION_TIME_NOT_PRESENT != 0 && ebp_copy != NULL && 
+            ebpFileIngestThreadParams->threadNum == 0)
+         {
+            LOG_INFO_ARGS("FileIngestThread %d: ATS_TEST_CASE_ACQUISITION_TIME_NOT_PRESENT: ebp_copy->ebp_time_flag before: %d", 
+               ebpFileIngestThreadParams->threadNum, ebp_copy->ebp_time_flag);
+            ebp_copy->ebp_time_flag = 0;
+         }
+         if (ATS_TEST_CASE_ACQUISITION_TIME_MISMATCH != 0 && ebp_copy != NULL && esi->elementary_PID == 482)
+         {
+            if (ebpFileIngestThreadParams->threadNum == 1)
+            {
+               ebp_copy->ebp_acquisition_time = 190000;
+            }
+            else
+            {
+               ebp_copy->ebp_acquisition_time = 180000;
+            }
+            LOG_INFO_ARGS("FileIngestThread %d: ATS_TEST_CASE_ACQUISITION_TIME_MISMATCH: ebp_copy->ebp_acquisition_time: %"PRId64"", 
+               ebpFileIngestThreadParams->threadNum, ebp_copy->ebp_acquisition_time);
+         }
+
          int returnCode = postToFIFO (pes->header.PTS, sapType, ebp_copy, ebpDescriptor, 
             esi->elementary_PID, ebpFileIngestThreadParams, i);
          if (returnCode != 0)
@@ -137,7 +174,6 @@ static int validate_pes_packet(pes_packet_t *pes, elementary_stream_info_t *esi,
 
             streamInfo->streamPassFail = 0;
          }
-
 
          // do the following once only -- use flag lastVideoPTSSet to tell if already done
          if ((lastVideoPTSSet == 0) && IS_VIDEO_STREAM(esi->stream_type))
@@ -189,6 +225,140 @@ static int validate_pes_packet(pes_packet_t *pes, elementary_stream_info_t *esi,
 
    pes_free(pes);
    return 1;
+}
+
+
+uint32_t getSAPType(pes_packet_t *pes, ts_packet_t *first_ts,  uint32_t streamType)
+{
+   switch (streamType) 
+   {
+      case STREAM_TYPE_AVC:
+         return getSAPType_AVC(pes, first_ts);
+      case STREAM_TYPE_MPEG2_AAC:
+         return getSAPType_MPEG2_AAC(pes, first_ts);
+      case STREAM_TYPE_MPEG4_AAC:
+         return getSAPType_MPEG4_AAC(pes, first_ts);
+      case STREAM_TYPE_AC3_AUDIO:
+         return getSAPType_AC3(pes, first_ts);
+      case STREAM_TYPE_MPEG2_VIDEO:
+         return getSAPType_MPEG2_VIDEO(pes, first_ts);
+
+      // video
+      case STREAM_TYPE_HEVC:
+      case STREAM_TYPE_MPEG1_VIDEO:
+      case STREAM_TYPE_MPEG4_VIDEO:
+      case STREAM_TYPE_SVC:
+      case STREAM_TYPE_MVC:
+      case STREAM_TYPE_S3D_SC_MPEG2:
+      case STREAM_TYPE_S3D_SC_AVC:
+
+         // audio
+      case STREAM_TYPE_MPEG1_AUDIO:
+      case STREAM_TYPE_MPEG2_AUDIO:
+      case STREAM_TYPE_MPEG4_AAC_RAW:
+
+      default:
+         return SAP_STREAM_TYPE_NOT_SUPPORTED;
+   }
+}
+
+uint32_t getSAPType_MPEG2_AAC(pes_packet_t *pes, ts_packet_t *first_ts)
+{
+   // look for sync bits 0xFFF at start of PES to confirm that the PES starts an audio frame
+
+   uint8_t* buf = pes->payload;
+   int len = pes->payload_len;
+
+   uint16_t syncWordExpected = 0xFFF;
+   uint16_t syncWordActual = ((0xF0 & buf[1]) << 4) | buf[0];  // GORP: byte order here?
+
+   if (syncWordExpected == syncWordActual)
+   {
+      return 1;  // GORP: is this right??
+   }
+   else
+   {
+      LOG_ERROR_ARGS("getSAPType_MPEG2_AAC: SAP_STREAM_TYPE_ERROR: Expected sync word = %x. Actual sync word = %x",
+         syncWordExpected, syncWordActual);
+      return SAP_STREAM_TYPE_ERROR;
+   }
+}
+
+uint32_t getSAPType_MPEG4_AAC(pes_packet_t *pes, ts_packet_t *first_ts)
+{
+   // same as MPEG 2
+   return getSAPType_MPEG4_AAC(pes, first_ts);
+}
+
+uint32_t getSAPType_AC3(pes_packet_t *pes, ts_packet_t *first_ts)
+{
+// From the AC3 spec, Sec 7.1.1:
+// "AC-3 bit streams contain coded exponents for all independent channels, all coupled channels,
+// and for the coupling and low frequency effects channels (when they are enabled). Since audio
+// information is not shared across frames, block 0 of every frame will include new exponents for
+// every channel. Exponent information may be shared across blocks within a frame, so blocks 1
+// through 5 may reuse exponents from previous blocks."
+// 
+// So, all AC3 frames are independent, and its sufficient to check that the PES packet 
+// contents start with a new AC3 frame.
+
+   uint8_t* buf = pes->payload;
+   int len = pes->payload_len;
+
+   uint16_t syncWordExpected = 0x0B77;
+   uint16_t syncWordActual = (buf[1] << 8) | buf[0];  // GORP: byte order here?
+
+   if (syncWordExpected == syncWordActual)
+   {
+      return 1;  // GORP: is this right??
+   }
+   else
+   {
+      return SAP_STREAM_TYPE_ERROR;
+   }
+}
+
+uint32_t getSAPType_MPEG2_VIDEO(pes_packet_t *pes, ts_packet_t *first_ts)
+{
+   // GORP: fill in
+   return SAP_STREAM_TYPE_NOT_SUPPORTED;
+}
+
+uint32_t getSAPType_AVC(pes_packet_t *pes, ts_packet_t *first_ts)
+{
+   uint32_t SAPType = SAP_STREAM_TYPE_ERROR;
+   if (first_ts->adaptation_field.random_access_indicator) 
+   {
+      int nal_start, nal_end;
+      int returnCode;
+      uint8_t* buf = pes->payload;
+      int len = pes->payload_len;
+
+      // walk the nal units in the PES payload and check to see if they are type 1 or type 5 -- these determine SAP type
+      int index = 0;
+      while ((len > index) && ((returnCode = find_nal_unit(buf + index, len - index, &nal_start, &nal_end)) !=  0))
+      {
+//         printf("nal_start = %d, nal_end = %d \n", nal_start, nal_end);
+         h264_stream_t* h = h264_new();
+         read_nal_unit(h, &buf[nal_start + index], nal_end - nal_start);
+//         printf("h->nal->nal_unit_type: %d \n", h->nal->nal_unit_type);
+         if (h->nal->nal_unit_type == 5)
+         {
+            SAPType = 1;
+            break;
+         }
+         else if (h->nal->nal_unit_type == 1)
+         {
+            SAPType = 2;
+            break;
+         }
+
+         h264_free(h);
+         index += nal_end;
+      }
+   }
+
+   return SAPType;
 }
 
 ebp_t* getEBP(ts_packet_t *ts, ebp_stream_info_t * streamInfo, int threadNum)
@@ -530,6 +700,17 @@ int postToFIFO  (uint64_t PTS, uint32_t sapType, ebp_t *ebp, ebp_descriptor_t *e
 
    ebpSegmentInfo->PTS = PTS;
    ebpSegmentInfo->SAPType = sapType;
+   if (ATS_TEST_CASE_SAP_TYPE_MISMATCH_AND_TOO_LARGE != 0)
+   {
+      ebp->ebp_sap_flag = 1;
+      ebp->ebp_sap_type = 5;
+//      ebpSegmentInfo->SAPType = 3;
+   }
+   else if (ATS_TEST_CASE_SAP_TYPE_NOT_1_OR_2 != 0)
+   {
+      ebpSegmentInfo->SAPType = 3;
+   }
+
    ebpSegmentInfo->EBP = ebp;
    ebpSegmentInfo->partitionId = partitionId;
    // make a copy of ebp_descriptor since this mem could be freed before being prcessed by analysis thread
@@ -595,9 +776,11 @@ void triggerImplicitBoundaries (int threadNum, ebp_stream_info_t **streamInfoArr
 }
 
 
-void detectBoundary(int threadNum, ebp_t* ebp, ebp_stream_info_t *streamInfo, uint64_t PTS, int *isBoundary)
+int detectBoundary(int threadNum, ebp_t* ebp, ebp_stream_info_t *streamInfo, uint64_t PTS, int *isBoundary)
 {
    // isBoundary is an array indexed by PartitionId;
+
+   int nReturnCode = 0;
 
    ebp_boundary_info_t *ebpBoundaryInfo = streamInfo->ebpBoundaryInfo;
 
@@ -621,13 +804,14 @@ void detectBoundary(int threadNum, ebp_t* ebp, ebp_stream_info_t *streamInfo, ui
          {
             varray_pop(ebpBoundaryInfo[i].queueLastImplicitPTS);
             isBoundary[i] = 1;
+            nReturnCode = 1;
          }
       }
    }
 
    if (ebp == NULL)
    {
-      return;
+      return nReturnCode;
    }
 
    // next check for explicit boundaries
@@ -643,6 +827,7 @@ void detectBoundary(int threadNum, ebp_t* ebp, ebp_stream_info_t *streamInfo, ui
          else
          {
             isBoundary[EBP_PARTITION_SEGMENT] = 1;
+            nReturnCode = 1;
          }
       }
       else
@@ -664,6 +849,7 @@ void detectBoundary(int threadNum, ebp_t* ebp, ebp_stream_info_t *streamInfo, ui
          else
          {
             isBoundary[EBP_PARTITION_FRAGMENT] = 1;
+            nReturnCode = 1;
          }
       }
       else
@@ -693,6 +879,7 @@ void detectBoundary(int threadNum, ebp_t* ebp, ebp_stream_info_t *streamInfo, ui
                else
                {
                   isBoundary[i] = 1;
+                  nReturnCode = 1;
                }
             }
             else
@@ -706,6 +893,7 @@ void detectBoundary(int threadNum, ebp_t* ebp, ebp_stream_info_t *streamInfo, ui
       }
    }
 
+   return nReturnCode;
 }
 
 void cleanupAndExit(ebp_file_ingest_thread_params_t *ebpFileIngestThreadParams)
@@ -735,4 +923,74 @@ void cleanupAndExit(ebp_file_ingest_thread_params_t *ebpFileIngestThreadParams)
 }
 
 
+uint64_t adjustPTSForTests (uint64_t PTSIn, int fileIndex, ebp_stream_info_t * streamInfo)
+{
+   uint64_t PTSOut = PTSIn;
+
+   // change PTS here for tests
+   if (ATS_TEST_CASE_AUDIO_PTS_GAP)
+   {
+      // in a particular file, for a particular triggered segment, subtract 1 second from audio PTS
+      if (fileIndex == 1 && streamInfo->PID == 482 && streamInfo->ebpChunkCntr == 3)
+      {
+         LOG_INFO ("ATS_TEST_CASE_AUDIO_PTS_GAP: subtracting 1 second from PTS for file 1 / PID 482");
+         PTSOut -= 90000;
+      }
+   }
+   else if (ATS_TEST_CASE_AUDIO_PTS_OVERLAP)
+   {
+      // in a particular file, for a particular triggered segment, add 1 second from audio PTS
+      if (fileIndex == 1 && streamInfo->PID == 482 && streamInfo->ebpChunkCntr == 3)
+      {
+         LOG_INFO ("ATS_TEST_CASE_AUDIO_PTS_GAP: adding 1 second from PTS for file 1 / PID 482");
+         PTSOut += 90000;
+      }
+   }
+   else if (ATS_TEST_CASE_VIDEO_PTS_GAP)
+   {
+      // in a particular file, for a particular triggered segment, subtract 1 second from video PTS
+      if (fileIndex == 1 && streamInfo->PID == 481 && streamInfo->ebpChunkCntr == 3)
+      {
+         LOG_INFO ("ATS_TEST_CASE_AUDIO_PTS_GAP: subtracting 1 second from PTS for file 1 / PID 481");
+         PTSOut -= 90000;
+      }
+   }
+   else if (ATS_TEST_CASE_VIDEO_PTS_OVERLAP)
+   {
+      // in a particular file, for a particular triggered segment, add 1 second to video PTS
+      if (fileIndex == 1 && streamInfo->PID == 481 && streamInfo->ebpChunkCntr == 3)
+      {
+         LOG_INFO ("ATS_TEST_CASE_AUDIO_PTS_GAP: adding 1 second from PTS for file 1 / PID 481");
+         PTSOut += 90000;
+      }
+   }
+   else if (ATS_TEST_CASE_AUDIO_PTS_OFFSET)
+   {
+      // in a particular file, subtract 1 second from audio PTS -- this offsets whole stream
+      if (fileIndex == 1 && streamInfo->PID == 482)
+      {
+         LOG_INFO ("ATS_TEST_CASE_AUDIO_PTS_GAP: subtracting 1 second from PTS for file 1 / PID 482");
+         PTSOut += 90000;
+      }
+   }
+   else if (ATS_TEST_CASE_VIDEO_PTS_OFFSET)
+   {
+      // in a particular file, subtract 1 second from video PTS -- this offsets whole stream
+      if (fileIndex == 1 && streamInfo->PID == 481)
+      {
+         LOG_INFO ("ATS_TEST_CASE_AUDIO_PTS_GAP: subtracting 1 second from PTS for file 1 / PID 481");
+         PTSOut += 90000;
+      }
+   }
+   else if (ATS_TEST_CASE_AUDIO_PTS_BIG_LAG)
+   {
+      // in all files, add 4 seconds to audio PTS
+      if (streamInfo->PID == 483)
+      {
+         PTSOut += 90000 * 4;
+      }
+   }
+
+   return PTSOut;
+}
 

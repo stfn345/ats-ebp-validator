@@ -29,6 +29,7 @@
 #include "EBPSegmentAnalysisThread.h"
 
 #include "ATSTestApp.h"
+#include "ATSTestDefines.h"
 
 
 static int g_bPATFound = 0;
@@ -42,12 +43,15 @@ static int pmt_processor(mpeg2ts_program_t *m2p, void *arg);
 static int pat_processor(mpeg2ts_stream_t *m2s, void *arg);
 
 static struct option long_options[] = { 
-    { "peek",	   no_argument,        NULL, 'p' }, 
-    { "help",       no_argument,        NULL, 'h' }, 
+    { "peek",  no_argument,        NULL, 'p' }, 
+    { "test",  required_argument,  NULL, 't' }, 
+    { "help",  no_argument,        NULL, 'h' }, 
+    { 0,  0,        0, 0 }
 }; 
 
 static char options[] = 
 "\t-p, --peek\n" 
+"\t-t, --test\n"
 "\t-h, --help\n"; 
 
 static void usage() 
@@ -83,7 +87,7 @@ int modBoundaryInfoArray (ebp_descriptor_t * ebpDescriptor, ebp_t *ebp, ebp_boun
 {
    if (ebpDescriptor != NULL)
    {
-      printf ("modBoundaryInfoArray: ebpDescriptor!= NULL\n");
+      LOG_INFO ("modBoundaryInfoArray: ebpDescriptor!= NULL");
       for (int i=0; i<ebpDescriptor->num_partitions; i++)
       {
          ebp_partition_data_t *partition = (ebp_partition_data_t *)vqarray_get(ebpDescriptor->partition_data, i);
@@ -106,6 +110,10 @@ int modBoundaryInfoArray (ebp_descriptor_t * ebpDescriptor, ebp_t *ebp, ebp_boun
             if (returnCode == 0)
             {
                boundaryInfoArray[partition->partition_id].implicitFileIndex = currentFileIndex;
+               if (ATS_TEST_CASE_AUDIO_XFILE_IMPLICIT_TRIGGER != 0 && currentFileIndex == 1)
+               {
+                  boundaryInfoArray[partition->partition_id].implicitFileIndex = 2;
+               }
             }
             else
             {
@@ -128,7 +136,7 @@ int modBoundaryInfoArray (ebp_descriptor_t * ebpDescriptor, ebp_t *ebp, ebp_boun
    }
    else if (ebp != NULL)
    {
-      printf ("modBoundaryInfoArray: ebp_descriptor NULL, ebp != NULL\n");
+      LOG_INFO ("modBoundaryInfoArray: ebp_descriptor NULL, ebp != NULL");
 
       if (ebp->ebp_fragment_flag)
       {
@@ -165,7 +173,7 @@ int modBoundaryInfoArray (ebp_descriptor_t * ebpDescriptor, ebp_t *ebp, ebp_boun
    }
    else
    {
-      printf ("modBoundaryInfoArray: both ebp_descriptor and ebp NULL\n");
+      LOG_INFO ("modBoundaryInfoArray: both ebp_descriptor and ebp NULL");
 
       if (IS_VIDEO_STREAM((programStreamInfo->stream_types)[currentStreamIndex]))
       {
@@ -248,12 +256,15 @@ static int handle_pes_packet(pes_packet_t *pes, elementary_stream_info_t *esi, v
    streamInfo.PID = esi->elementary_PID;
    ebp_t* ebp = getEBP(ts, &streamInfo, -1 /* threadNum */);
          
-   // GORP: testing -- removes ebp from audio to test implicit triggering
-/*   if (esi->elementary_PID != 481)
+   if (ATS_TEST_CASE_AUDIO_IMPLICIT_TRIGGER || ATS_TEST_CASE_AUDIO_XFILE_IMPLICIT_TRIGGER)
    {
-      ebp = NULL;
+      // testing -- removes ebp from audio to test implicit triggering
+      if (esi->elementary_PID == 482)
+      {
+         ebp = NULL;
+      }
    }
-   */
+   
 
    if (ebp != NULL)
    {         
@@ -343,8 +354,18 @@ static int pmt_processor(mpeg2ts_program_t *m2p, void *arg)
          if (handle_pid)
          {
             ebp_descriptor_t* ebpDescriptor = getEBPDescriptor (pi->es_info);
-            // GORP: testing -- removes ebpDescriptor to test triggering without descriptor present
-//            ebpDescriptor = NULL;
+            if (ATS_TEST_CASE_NO_EBP_DESCRIPTOR)
+            {
+               // testing -- removes ebpDescriptor to test triggering without descriptor present
+               ebpDescriptor = NULL;
+            }
+            else if (IS_AUDIO_STREAM(pi->es_info->stream_type) && 
+               (ATS_TEST_CASE_AUDIO_IMPLICIT_TRIGGER || ATS_TEST_CASE_AUDIO_XFILE_IMPLICIT_TRIGGER))
+            {
+               // testing -- removes ebpDescriptor to test implicit triggering
+               ebpDescriptor = NULL;
+            }
+
             if (ebpDescriptor == NULL)
             {
                LOG_INFO_ARGS ("Starting EBP detection for PID: %d\n", pi->es_info->elementary_PID);
@@ -430,16 +451,19 @@ int prereadFiles(int numFiles, char **fileNames, program_stream_info_t *programS
       }
 
        // Register EBP descriptor parser
-      // GORP: testing -- comment the following out to removes ebpDescriptor to test triggering without descriptor present
-      descriptor_table_entry_t *desc = calloc(1, sizeof(descriptor_table_entry_t));
-      desc->tag = EBP_DESCRIPTOR;
-      desc->free_descriptor = ebp_descriptor_free;
-      desc->print_descriptor = ebp_descriptor_print;
-      desc->read_descriptor = ebp_descriptor_read;
-      if (!register_descriptor(desc))
+      // testing -- comment the following out to removes ebpDescriptor to test triggering without descriptor present
+      if (!ATS_TEST_CASE_NO_EBP_DESCRIPTOR)
       {
-         LOG_ERROR_ARGS("Main:prereadFiles: FAIL: Could not register EBP descriptor parser for file %s", fileNames[i]);
-         return -1;
+         descriptor_table_entry_t *desc = calloc(1, sizeof(descriptor_table_entry_t));
+         desc->tag = EBP_DESCRIPTOR;
+         desc->free_descriptor = ebp_descriptor_free;
+         desc->print_descriptor = ebp_descriptor_print;
+         desc->read_descriptor = ebp_descriptor_read;
+         if (!register_descriptor(desc))
+         {
+            LOG_ERROR_ARGS("Main:prereadFiles: FAIL: Could not register EBP descriptor parser for file %s", fileNames[i]);
+            return -1;
+         }
       }
       
 
@@ -468,8 +492,6 @@ int prereadFiles(int numFiles, char **fileNames, program_stream_info_t *programS
       mpeg2ts_stream_free(m2s);
 
       fclose(infile);
-
-
    }
 
    free (ts_buf);
@@ -551,7 +573,8 @@ int getVideoPID(program_stream_info_t *programStreamInfo, uint32_t *PIDOut, uint
    }
    else
    {
-      LOG_ERROR ("Main:getVideoPID: FAIL: no video stream found");
+      // no video stream found -- this is legal
+      LOG_INFO ("Main:getVideoPID: FAIL: no video stream found");
       return -1;
    }
 }
@@ -564,13 +587,13 @@ int getAudioPID(program_stream_info_t *programStreamInfo, char *languageIn, uint
       {
          if (languageIn != NULL)
          {
-            printf ("Using language %s for match\n", languageIn);
-            printf ("Using languageComparing language %s to %s\n", languageIn, (programStreamInfo->language)[streamIndex]);
+            LOG_INFO_ARGS ("Using language %s for match", languageIn);
+            LOG_INFO_ARGS ("Using languageComparing language %s to %s", languageIn, (programStreamInfo->language)[streamIndex]);
             // use language for match
             if (strcmp(languageIn, (programStreamInfo->language)[streamIndex]) == 0)
             {
                *PIDOut = (programStreamInfo->PIDs)[streamIndex];
-               printf ("Match! PIDOut = %d\n", *PIDOut);
+               LOG_INFO_ARGS ("Match! PIDOut = %d", *PIDOut);
                *streamType = (programStreamInfo->stream_types)[streamIndex];
                return 0;
             }
@@ -615,7 +638,7 @@ varray_t *getUniqueAudioIDArray(int numFiles, program_stream_info_t *programStre
             {
                varray_elem_t* element = varray_get(audioStreamLanguageArray, i);
                char *language = *((char **)element);
-               printf ("comparing %s to %s\n", language, (programStreamInfo[fileIndex].language)[streamIndex]);
+               LOG_INFO_ARGS ("comparing %s to %s", language, (programStreamInfo[fileIndex].language)[streamIndex]);
                if (strcmp(language, (programStreamInfo[fileIndex].language)[streamIndex]) == 0)
                {
                   foundLanguage = 1;
@@ -1089,13 +1112,29 @@ int main(int argc, char** argv)
 
    int peekFlag = 0;
 
-   while ((c = getopt_long(argc, argv, "ph", long_options, &long_options_index)) != -1) 
+   while ((c = getopt_long(argc, argv, "pt:h", long_options, &long_options_index)) != -1) 
    {
        switch (c) 
        {
          case 'p':
             peekFlag = 1; 
-            break;         
+            break;        
+         case 't':
+            if(optarg != NULL) 
+            {
+               if (setTestCase (optarg) != 0)
+               {
+                  LOG_INFO_ARGS ("Main: Unrecognized test case: %s", optarg);
+                  return -1;
+               }
+            }
+            else
+            {
+               LOG_INFO ("Main: No test case specified with -t option");
+               return -1;
+            }
+            break;
+
          case 'h':
          default:
             usage(); 
@@ -1104,8 +1143,10 @@ int main(int argc, char** argv)
    }
 
 
+
    LOG_INFO_ARGS ("Main: entering: optind = %d", optind);
    int numFiles = argc-optind;
+   LOG_INFO_ARGS ("Main: entering: numFiles = %d", numFiles);
    for (int i=optind; i<argc; i++)
    {
       LOG_INFO_ARGS ("Main: FilePath %d = %s", i, argv[i]); 
@@ -1302,6 +1343,21 @@ void populateProgramStreamInfo(program_stream_info_t *programStreamInfo, mpeg2ts
          programStreamInfo->PIDs[j] = pi->es_info->elementary_PID;
 
          ebp_descriptor_t* ebpDescriptor = getEBPDescriptor (pi->es_info);
+         if (ATS_TEST_CASE_AUDIO_IMPLICIT_TRIGGER &&
+            pi->es_info->elementary_PID == 482)
+         {
+            ebpDescriptor = NULL;
+         }
+         else if (ATS_TEST_CASE_AUDIO_XFILE_IMPLICIT_TRIGGER != 0 && pi->es_info->elementary_PID == 482)
+         {
+            ebp_partition_data_t* partition = get_partition (ebpDescriptor, EBP_PARTITION_FRAGMENT);
+            partition->ebp_data_explicit_flag = 0;
+            partition->ebp_pid = 481;
+            partition = get_partition (ebpDescriptor, EBP_PARTITION_SEGMENT);
+            partition->ebp_data_explicit_flag = 0;
+            partition->ebp_pid = 481;
+         }
+
          if (ebpDescriptor != NULL)
          {
             ebp_descriptor_print_stdout (ebpDescriptor);
@@ -1363,14 +1419,17 @@ void populateProgramStreamInfo(program_stream_info_t *programStreamInfo, mpeg2ts
                strcat (programStreamInfo->language[j], ":");
             }
          }
-/*         else
+         else
          {
-            // GORP:testing: tests discrimination by language by making a unique language per stream
-            char temp[10];
-            sprintf (temp, "%d", pi->es_info->elementary_PID);
-            strcat (programStreamInfo[i].language[j], temp);               
+            if (ATS_TEST_CASE_AUDIO_UNIQUE_LANG)
+            {
+               // testing: tests discrimination by language by making a unique language per stream
+               char temp[10];
+               sprintf (temp, "%d", pi->es_info->elementary_PID);
+               strcat (programStreamInfo->language[j], temp);  
+            }
          }
-         */
+         
          strcat (programStreamInfo->language[j], ",");
 
          if (ac3Descriptor != NULL)

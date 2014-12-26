@@ -140,7 +140,7 @@ int ebp_validate_groups(const ebp_t *ebp)
          uint32_t previous_grouping_id = *((uint32_t *) vqarray_get (ebp->ebp_grouping_ids, i-1));
          if (previous_grouping_id == 126 || previous_grouping_id == 127)
          {
-            LOG_ERROR ("ebp_validate_groups: FAIL: orphan group id 127 detected (2)");
+            LOG_ERROR ("ebp_validate_groups: FAIL: orphan group id 126 detected (2)");
             returnCode = -1;
          }
       }
@@ -429,24 +429,20 @@ void ebp_descriptor_print_stdout(const ebp_descriptor_t *ebp_desc)
 
 ebp_partition_data_t* get_fragment_partition (const ebp_descriptor_t *ebp_desc)
 {
-   for (int i=0; i<vqarray_length(ebp_desc->partition_data); i++)
-   {
-      ebp_partition_data_t* partition = (ebp_partition_data_t *) vqarray_get(ebp_desc->partition_data, i);
-      if (partition->partition_id == EBP_PARTITION_FRAGMENT)
-      {
-         return partition;
-      }
-   }
-
-   return NULL;
+   return get_partition (ebp_desc, EBP_PARTITION_FRAGMENT);
 }
 
 ebp_partition_data_t* get_segment_partition (const ebp_descriptor_t *ebp_desc)
 {
+   return get_partition (ebp_desc, EBP_PARTITION_SEGMENT);
+}
+
+ebp_partition_data_t* get_partition (const ebp_descriptor_t *ebp_desc, int partitionId)
+{
    for (int i=0; i<vqarray_length(ebp_desc->partition_data); i++)
    {
       ebp_partition_data_t* partition = (ebp_partition_data_t *) vqarray_get(ebp_desc->partition_data, i);
-      if (partition->partition_id == EBP_PARTITION_SEGMENT)
+      if (partition->partition_id == partitionId)
       {
          return partition;
       }

@@ -89,6 +89,7 @@ int does_segment_mark_boundary (const ebp_descriptor_t *ebp_desc);
 
 ebp_partition_data_t* get_fragment_partition (const ebp_descriptor_t *ebp_desc);
 ebp_partition_data_t* get_segment_partition (const ebp_descriptor_t *ebp_desc);
+ebp_partition_data_t* get_partition (const ebp_descriptor_t *ebp_desc, int partitionId);
 
 uint8_t get_fragment_SAP_max (const ebp_descriptor_t *ebp_desc);
 uint8_t get_segment_SAP_max (const ebp_descriptor_t *ebp_desc);

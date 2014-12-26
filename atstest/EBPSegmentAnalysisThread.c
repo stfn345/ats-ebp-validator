@@ -144,8 +144,7 @@ void *EBPSegmentAnalysisThreadProc(void *threadParams)
                         ebpSegmentAnalysisThreadParams->threadID, i, streamInfo->PID);
                      streamInfo->streamPassFail = 0;
                   }
-   
-                  if (acquisitionTimePresentTemp)
+                  else if (acquisitionTimePresentTemp)
                   {
                      uint32_t acquisitionTimeSecsTemp = 0;
                      float acquisitionTimeFracSecTemp = 0.0;
@@ -154,11 +153,99 @@ void *EBPSegmentAnalysisThreadProc(void *threadParams)
                      if (acquisitionTimeSecsTemp != acquisitionTimeSecs ||
                         acquisitionTimeFracSecTemp != acquisitionTimeFracSec)
                      {
-                        LOG_ERROR_ARGS ("EBPSegmentAnalysisThread %d: FAIL: Acquisition time MISMATCH for fifo %d (PID %d). \
-                                        Expected %d,%f, Actual %d,%f", ebpSegmentAnalysisThreadParams->threadID, i, streamInfo->PID, 
+                        LOG_ERROR_ARGS ("EBPSegmentAnalysisThread %d: FAIL: Acquisition time MISMATCH for fifo %d (PID %d). Expected %d,%f, Actual %d,%f", 
+                                        ebpSegmentAnalysisThreadParams->threadID, i, streamInfo->PID, 
                                         acquisitionTimeSecs, acquisitionTimeFracSec,
                                         acquisitionTimeSecsTemp, acquisitionTimeFracSecTemp);
                         streamInfo->streamPassFail = 0;
+                     }
+                     else
+                     {
+                        LOG_INFO_ARGS ("EBPSegmentAnalysisThread %d: Acquisition time for fifo %d (PID %d): %d,%f", 
+                                        ebpSegmentAnalysisThreadParams->threadID, i, streamInfo->PID, 
+                                        acquisitionTimeSecs, acquisitionTimeFracSec);
+                     }
+                  }
+               }
+
+               // Next check that the SAPType is valid
+               if (ebpSegmentInfo->SAPType == SAP_STREAM_TYPE_NOT_SUPPORTED)
+               {
+                  LOG_INFO_ARGS ("EBPSegmentAnalysisThread %d: SAP_STREAM_TYPE_NOT_SUPPORTED for fifo %d (PID %d).", 
+                     ebpSegmentAnalysisThreadParams->threadID, i, streamInfo->PID);
+               }
+               if (ebpSegmentInfo->SAPType == SAP_STREAM_TYPE_ERROR)
+               {
+                  LOG_ERROR_ARGS ("EBPSegmentAnalysisThread %d: SAP_STREAM_TYPE_ERROR for fifo %d (PID %d).", 
+                     ebpSegmentAnalysisThreadParams->threadID, i, streamInfo->PID);
+                  streamInfo->streamPassFail = 0;
+               }
+
+               if (ebpSegmentInfo->EBP == NULL)
+               {
+                  LOG_INFO_ARGS ("EBPSegmentAnalysisThread %d: ebpSegmentInfo->EBP == NULL for fifo %d (PID %d).", 
+                     ebpSegmentAnalysisThreadParams->threadID, i, streamInfo->PID);
+               }
+               
+
+               if (ebpSegmentInfo->SAPType != SAP_STREAM_TYPE_NOT_SUPPORTED && 
+                   ebpSegmentInfo->SAPType != SAP_STREAM_TYPE_ERROR && 
+                   ebpSegmentInfo->EBP != NULL)
+               {
+                  if (ebpSegmentInfo->EBP->ebp_sap_flag)
+                  {
+                     if (ebpSegmentInfo->EBP->ebp_sap_type != ebpSegmentInfo->SAPType)
+                     {
+                        LOG_ERROR_ARGS ("EBPSegmentAnalysisThread %d: FAIL: SAP Type MISMATCH for fifo %d (PID %d). Expected %d, Actual %d",
+                                        ebpSegmentAnalysisThreadParams->threadID, i, streamInfo->PID, 
+                                        ebpSegmentInfo->EBP->ebp_sap_type, ebpSegmentInfo->SAPType);
+                        streamInfo->streamPassFail = 0;
+                     }
+                     else
+                     {
+                        LOG_INFO_ARGS ("EBPSegmentAnalysisThread %d: SAP Type MATCH for fifo %d (PID %d). Expected %d, Actual %d", 
+                                        ebpSegmentAnalysisThreadParams->threadID, i, streamInfo->PID, 
+                                        ebpSegmentInfo->EBP->ebp_sap_type, ebpSegmentInfo->SAPType);
+                     }
+   
+                     // check descriptor SAP_max
+                     if (ebpSegmentInfo->latestEBPDescriptor != NULL)
+                     {
+                        ebp_partition_data_t* partition = 
+                           get_partition (ebpSegmentInfo->latestEBPDescriptor, ebpSegmentInfo->partitionId);
+                        if (partition != NULL)
+                        {
+                           if (ebpSegmentInfo->EBP->ebp_sap_type > partition->sap_type_max)
+                           {
+                              LOG_ERROR_ARGS ("EBPSegmentAnalysisThread %d: FAIL: SAP Type too large for partition %d in fifo %d (PID %d). EBP Descriptor SAP Max %d, Actual %d", 
+                                              ebpSegmentAnalysisThreadParams->threadID, ebpSegmentInfo->partitionId, i, streamInfo->PID, 
+                                              partition->sap_type_max, ebpSegmentInfo->EBP->ebp_sap_type);
+                              streamInfo->streamPassFail = 0;
+                           }
+                           else
+                           {
+                              LOG_INFO_ARGS ("EBPSegmentAnalysisThread %d: SAP Type OK for partition %d in fifo %d (PID %d). EBP Descriptor SAP Max %d, Actual %d", 
+                                              ebpSegmentAnalysisThreadParams->threadID, 
+                                              ebpSegmentInfo->partitionId, i, streamInfo->PID, 
+                                              partition->sap_type_max, ebpSegmentInfo->SAPType);
+                           }
+                        }
+                     }
+                  }
+                  else
+                  {
+                     // GORP: it seems like this should apply even when EBP struct not present
+                     if (ebpSegmentInfo->SAPType != 1 && ebpSegmentInfo->SAPType !=2)
+                     {
+                        LOG_ERROR_ARGS ("EBPSegmentAnalysisThread %d: FAIL: Expected SAP Type 1 or 2 for fifo %d (PID %d). Actual SAP Type: %d", 
+                           ebpSegmentAnalysisThreadParams->threadID, i, streamInfo->PID, ebpSegmentInfo->SAPType);
+                        streamInfo->streamPassFail = 0;
+                     }
+                     else
+                     {
+                        LOG_INFO_ARGS ("EBPSegmentAnalysisThread %d: No ebp_sap_flag set: Expected SAP Type 1 or 2 for fifo %d (PID %d). Actual SAP Type: %d", 
+                                        ebpSegmentAnalysisThreadParams->threadID, i, streamInfo->PID, 
+                                        ebpSegmentInfo->SAPType);
                      }
                   }
                }
