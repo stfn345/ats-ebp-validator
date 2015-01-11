@@ -23,6 +23,8 @@
 #include "varray.h"
 
 
+//#define TS_SIZE 188
+//#define TS_SIZE 17
 
 #define EBP_NUM_PARTITIONS 10  // 0 - 9
 #define SAP_STREAM_TYPE_NOT_SUPPORTED  99

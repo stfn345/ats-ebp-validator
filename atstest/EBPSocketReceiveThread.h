@@ -15,22 +15,25 @@
  ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
  */
 
-#ifndef __H_EBPFILEINGESTTHREAD_67511FLKKJF
-#define __H_EBPFILEINGESTTHREAD_67511FLKKJF
+#ifndef __H_EBP_SOCKET_RECEIVE_THREAD
+#define __H_EBP_SOCKET_RECEIVE_THREAD
 
-#include "ThreadSafeFIFO.h"
-#include <tpes.h>
-#include "EBPIngestThreadCommon.h"
+#include "EBPStreamBuffer.h"
 
 typedef struct 
 {
-    char *filePath;
-    ebp_ingest_thread_params_t *ebpIngestThreadParams;
+    circular_buffer_t *cb;
+    unsigned long ipAddr;
+    unsigned short port;
 
-} ebp_file_ingest_thread_params_t;
+    int threadNum;
+    char *streamLogFile;
+
+    int stopFlag;
+
+} ebp_socket_receive_thread_params_t;
 
 
-void cleanupAndExit(ebp_file_ingest_thread_params_t *ebpFileIngestThreadParams);
-void *EBPFileIngestThreadProc(void *threadParams);
+void *EBPSocketReceiveThreadProc(void *threadParams);
 
-#endif  // __H_EBPFILEINGESTTHREAD_67511FLKKJF
+#endif  // __H_EBP_SOCKET_RECEIVE_THREAD

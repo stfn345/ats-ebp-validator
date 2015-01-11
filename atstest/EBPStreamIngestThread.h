@@ -15,22 +15,23 @@
  ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
  */
 
-#ifndef __H_EBPFILEINGESTTHREAD_67511FLKKJF
-#define __H_EBPFILEINGESTTHREAD_67511FLKKJF
+#ifndef __H_EBP_STREAM_INGEST_THREAD
+#define __H_EBP_STREAM_INGEST_THREAD
 
 #include "ThreadSafeFIFO.h"
 #include <tpes.h>
 #include "EBPIngestThreadCommon.h"
+#include "EBPStreamBuffer.h"
 
 typedef struct 
 {
-    char *filePath;
+    circular_buffer_t *cb;
     ebp_ingest_thread_params_t *ebpIngestThreadParams;
 
-} ebp_file_ingest_thread_params_t;
+} ebp_stream_ingest_thread_params_t;
 
 
-void cleanupAndExit(ebp_file_ingest_thread_params_t *ebpFileIngestThreadParams);
-void *EBPFileIngestThreadProc(void *threadParams);
+void streamIngestCleanup(ebp_stream_ingest_thread_params_t *ebpStreamIngestThreadParams);
+void *EBPStreamIngestThreadProc(void *threadParams);
 
-#endif  // __H_EBPFILEINGESTTHREAD_67511FLKKJF
+#endif  // __H_EBP_STREAM_INGEST_THREAD
