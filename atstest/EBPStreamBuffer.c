@@ -21,8 +21,11 @@
 
 #include "log.h"
 #include "EBPStreamBuffer.h"
+#include "ATSTestReport.h"
 
-static int cb_size_internal (circular_buffer_t *cb);
+
+static int cb_read_size_internal (circular_buffer_t *cb);
+static int cb_peek_size_internal (circular_buffer_t *cb);
 
 
 int cb_init (circular_buffer_t *cb, int bufferSz)
@@ -30,6 +33,7 @@ int cb_init (circular_buffer_t *cb, int bufferSz)
    if (cb == NULL)
    {
       LOG_ERROR ("EBPSreamBuffer: cb_init: cb == NULL");
+      reportAddErrorLog ("EBPSreamBuffer: cb_init: cb == NULL");
       return -1;
    }
 
@@ -37,6 +41,7 @@ int cb_init (circular_buffer_t *cb, int bufferSz)
    if (returnCode != 0)
    {
       LOG_ERROR_ARGS ("EBPSreamBuffer: cb_init: pthread_mutex_init failed: %d", returnCode);
+      reportAddErrorLogArgs ("EBPSreamBuffer: cb_init: pthread_mutex_init failed: %d", returnCode);
       return -1;
    }
 
@@ -44,15 +49,70 @@ int cb_init (circular_buffer_t *cb, int bufferSz)
    if (returnCode != 0)
    {
       LOG_ERROR_ARGS ("EBPSreamBuffer: cb_init: pthread_cond_init failed: %d", returnCode);
+      reportAddErrorLogArgs ("EBPSreamBuffer: cb_init: pthread_cond_init failed: %d", returnCode);
       return -1;
    }
 
 
+   LOG_INFO_ARGS ("EBPSreamBuffer: cb_init: initializing buffer with size %d", bufferSz);
    cb->buf = (uint8_t*) malloc (bufferSz);
    cb->bufSz = bufferSz;
    cb->writePtr = cb->buf;
    cb->readPtr = cb->buf;
-   cb->noWrites = 1;
+   cb->peekPtr = cb->buf;
+
+   cb->writeBufferTraversals = 0;
+   cb->readBufferTraversals = 0;
+   cb->peekBufferTraversals = 0;
+
+   return 0;
+}
+
+void cb_empty (circular_buffer_t *cb)
+{
+   cb->writePtr = cb->buf;
+   cb->readPtr = cb->buf;
+   cb->peekPtr = cb->buf;
+
+   cb->writeBufferTraversals = 0;
+   cb->readBufferTraversals = 0;
+   cb->peekBufferTraversals = 0;
+}
+
+int cb_is_disabled (circular_buffer_t *cb) 
+{
+   return cb->disabled;
+}
+
+int cb_disable (circular_buffer_t *cb) 
+{
+   int returnCode = pthread_mutex_lock (&(cb->mutex));
+   if (returnCode != 0)
+   {
+      LOG_ERROR_ARGS ("EBPSreamBuffer: cb_disable: pthread_mutex_lock failed: %d", returnCode);
+      reportAddErrorLogArgs ("EBPSreamBuffer: cb_disable: pthread_mutex_lock failed: %d", returnCode);
+      return -2;
+   }
+
+   cb->disabled = 1;
+
+   returnCode = pthread_cond_signal(&(cb->cb_nonempty_cond));
+   if (returnCode != 0)
+   {
+      // unlock mutex before returning
+      LOG_ERROR_ARGS ("EBPSreamBuffer: cb_disable: pthread_cond_signal failed: %d", returnCode);
+      reportAddErrorLogArgs ("EBPSreamBuffer: cb_disable: pthread_cond_signal failed: %d", returnCode);
+      pthread_mutex_unlock (&(cb->mutex));
+      return -1;  
+   }
+
+   returnCode = pthread_mutex_unlock (&(cb->mutex));
+   if (returnCode != 0)
+   {
+      LOG_ERROR_ARGS ("EBPSreamBuffer: cb_disable: pthread_mutex_unlock failed: %d", returnCode);
+      reportAddErrorLogArgs ("EBPSreamBuffer: cb_disable: pthread_mutex_unlock failed: %d", returnCode);
+      return -2;
+   }
 
    return 0;
 }
@@ -65,6 +125,7 @@ void cb_free (circular_buffer_t *cb)
    if (returnCode != 0)
    {
       LOG_ERROR_ARGS ("EBPSreamBuffer: cb_free: Error %d calling pthread_cond_destroy", returnCode);
+      reportAddErrorLogArgs ("EBPSreamBuffer: cb_free: Error %d calling pthread_cond_destroy", returnCode);
    }
 
    free (cb->buf);
@@ -87,12 +148,20 @@ int cb_read_or_peek (circular_buffer_t *cb, uint8_t* bytes, int bytesSz, int isP
    if (returnCode != 0)
    {
       LOG_ERROR_ARGS ("EBPSreamBuffer: cb_read_or_peek: pthread_mutex_lock failed: %d", returnCode);
+      reportAddErrorLogArgs ("EBPSreamBuffer: cb_read_or_peek: pthread_mutex_lock failed: %d", returnCode);
       return -2;
    }
 
-   int usedSz = cb_size_internal (cb);
+   int usedSz = 0;
+   if (isPeek)
+   {
+      usedSz = cb_peek_size_internal (cb);
+   }
+   else
+   {
+      usedSz = cb_read_size_internal (cb);
+   }
 
-   // GORP: check this
    if (usedSz == 0)
    {
       returnCode = pthread_cond_wait(&(cb->cb_nonempty_cond), &(cb->mutex));
@@ -100,11 +169,26 @@ int cb_read_or_peek (circular_buffer_t *cb, uint8_t* bytes, int bytesSz, int isP
       {
          // unlock mutex before returning
          LOG_ERROR_ARGS ("EBPSreamBuffer: cb_read_or_peek: pthread_cond_wait failed: %d", returnCode);
+         reportAddErrorLogArgs ("EBPSreamBuffer: cb_read_or_peek: pthread_cond_wait failed: %d", returnCode);
          pthread_mutex_unlock (&(cb->mutex));
          return -1;
       }
 
-      usedSz = cb_size_internal (cb);
+      if (cb->disabled)
+      {
+         // unlock mutex before returning
+         pthread_mutex_unlock (&(cb->mutex));
+         return -99;
+      }
+
+      if (isPeek)
+      {
+         usedSz = cb_peek_size_internal (cb);
+      }
+      else
+      {
+         usedSz = cb_read_size_internal (cb);
+      }
    }
 
    int sizeToCopy = usedSz;
@@ -113,34 +197,64 @@ int cb_read_or_peek (circular_buffer_t *cb, uint8_t* bytes, int bytesSz, int isP
       sizeToCopy = bytesSz;
    }
 
-   uint8_t *readPtr_Original = cb->readPtr;
+   uint8_t *startPtr = 0;
+   if (isPeek)
+   {
+      startPtr = cb->peekPtr;
+   }
+   else
+   {
+      startPtr = cb->readPtr;
+   }
 
-   int sz1 = cb->buf + cb->bufSz - cb->readPtr;
+  // uint8_t *readPtr_Original = cb->readPtr;
+ //  LOG_INFO_ARGS ("cb_read_or_peek: isPeek = %d, startPtr = 0x%x, sizeToCopy = %d", isPeek, (unsigned int)startPtr, sizeToCopy);
+
+   int sz1 = cb->buf + cb->bufSz - startPtr;
    if (sz1 > sizeToCopy)
    {
       sz1 = sizeToCopy;
    }
    int sz2 = sizeToCopy - sz1;
+//   LOG_INFO_ARGS ("cb_read_or_peek: sz1 = %d, sz2= %d", sz1, sz2);
 
-   memcpy (cb->readPtr, bytes, sz1);
-   cb->readPtr += sz1;
-   if (cb->readPtr >= cb->buf + cb->bufSz)
+   memcpy (bytes, startPtr, sz1);
+   startPtr += sz1;
+   if (startPtr >= cb->buf + cb->bufSz)
    {
-      cb->readPtr = cb->buf;
+      startPtr = cb->buf;
+      if (isPeek)
+      {
+         cb->peekBufferTraversals++;
+      }
+      else
+      {
+         cb->readBufferTraversals++;
+      }
    }
 
-   memcpy (cb->readPtr, bytes + sz1, sz2);
-   cb->readPtr += sz2;
+   memcpy (bytes + sz1, startPtr, sz2);
+   startPtr += sz2;
 
    if (isPeek)
    {
-      cb->readPtr = readPtr_Original;
+      cb->peekPtr = startPtr;
    }
+   else
+   {
+      cb->readPtr = startPtr;
+
+      // read automatically resets peeks
+      cb->peekPtr = startPtr;
+      cb->peekBufferTraversals = cb->readBufferTraversals;
+   }
+//   LOG_INFO_ARGS ("cb_read_or_peek: ending cb->readPtr = 0x%x", (unsigned int)cb->readPtr);
 
    returnCode = pthread_mutex_unlock (&(cb->mutex));
    if (returnCode != 0)
    {
       LOG_ERROR_ARGS ("EBPSreamBuffer: cb_read_or_peek: pthread_mutex_unlock failed: %d", returnCode);
+      reportAddErrorLogArgs ("EBPSreamBuffer: cb_read_or_peek: pthread_mutex_unlock failed: %d", returnCode);
       return -2;
    }
 
@@ -153,24 +267,38 @@ int cb_write (circular_buffer_t *cb, uint8_t* bytes, int bytesSz)
    if (returnCode != 0)
    {
       LOG_ERROR_ARGS ("EBPSreamBuffer: cb_write: pthread_mutex_lock failed: %d", returnCode);
+      reportAddErrorLogArgs ("EBPSreamBuffer: cb_write: pthread_mutex_lock failed: %d", returnCode);
       return -2;
    }
+      
+   if (cb->disabled)
+   {
+      // unlock mutex before returning
+      pthread_mutex_unlock (&(cb->mutex));
+      return -99;
+   }
 
-   int availableSz = cb->bufSz - cb_size_internal (cb);
+   int availableSz = cb->bufSz - cb_read_size_internal (cb);
+//   LOG_INFO_ARGS ("EBPSreamBuffer: cb_write: cb->bufSz = %d, cb_read_size_internal (cb) = %d, availableSz = %d", 
+//      cb->bufSz, cb_read_size_internal (cb), availableSz);
 
    if (bytesSz > availableSz)
    {
       LOG_ERROR_ARGS ("EBPSreamBuffer: cb_write: requested sz %d greater than available sz %d", bytesSz, availableSz);
+      reportAddErrorLogArgs ("EBPSreamBuffer: cb_write: requested sz %d greater than available sz %d", bytesSz, availableSz);
 
       returnCode = pthread_mutex_unlock (&(cb->mutex));
       if (returnCode != 0)
       {
          LOG_ERROR_ARGS ("EBPSreamBuffer: cb_write: pthread_mutex_unlock failed: %d", returnCode);
+         reportAddErrorLogArgs ("EBPSreamBuffer: cb_write: pthread_mutex_unlock failed: %d", returnCode);
          return -2;
       }
 
       return -1;
    }
+
+ //  LOG_INFO_ARGS ("cb_write: cb->writePtr = 0x%x, bytesSz = %d", (unsigned int)cb->writePtr, bytesSz);
 
    int sz1 = cb->buf + cb->bufSz - cb->writePtr;
    if (sz1 > bytesSz)
@@ -178,15 +306,17 @@ int cb_write (circular_buffer_t *cb, uint8_t* bytes, int bytesSz)
       sz1 = bytesSz;
    }
    int sz2 = bytesSz - sz1;
+//   LOG_INFO_ARGS ("cb_write: sz1 = %d, sz2 = %d", sz1, sz2);
 
-   memcpy (bytes, cb->writePtr, sz1);
+   memcpy (cb->writePtr, bytes, sz1);
    cb->writePtr += sz1;
    if (cb->writePtr >= cb->buf + cb->bufSz)
    {
       cb->writePtr = cb->buf;
+      cb->writeBufferTraversals++;
    }
 
-   memcpy (bytes + sz1, cb->writePtr, sz2);
+   memcpy (cb->writePtr, bytes + sz1, sz2);
    cb->writePtr += sz2;
 
    returnCode = pthread_cond_signal(&(cb->cb_nonempty_cond));
@@ -201,56 +331,56 @@ int cb_write (circular_buffer_t *cb, uint8_t* bytes, int bytesSz)
    if (returnCode != 0)
    {
       LOG_ERROR_ARGS ("EBPSreamBuffer: cb_write: pthread_mutex_unlock failed: %d", returnCode);
+      reportAddErrorLogArgs ("EBPSreamBuffer: cb_write: pthread_mutex_unlock failed: %d", returnCode);
       return -2;
    }
 
    return 0;
 }
 
-int cb_size (circular_buffer_t *cb)
+int cb_read_size (circular_buffer_t *cb)
 {
    int returnCode = pthread_mutex_lock (&(cb->mutex));
    if (returnCode != 0)
    {
-      LOG_ERROR_ARGS ("EBPSreamBuffer: cb_size: pthread_mutex_lock failed: %d", returnCode);
+      LOG_ERROR_ARGS ("EBPSreamBuffer: cb_read_size: pthread_mutex_lock failed: %d", returnCode);
+      reportAddErrorLogArgs ("EBPSreamBuffer: cb_read_size: pthread_mutex_lock failed: %d", returnCode);
       return -2;
    }
 
-   int size = cb_size_internal (cb);
+   int size = cb_read_size_internal (cb);
 
 //      printf ("cb->readPtr = %x, cb->writePtr = %x size = %d\n", (unsigned int)cb->readPtr, (unsigned int)cb->writePtr, size);
 
    returnCode = pthread_mutex_unlock (&(cb->mutex));
    if (returnCode != 0)
    {
-      LOG_ERROR_ARGS ("EBPSreamBuffer: cb_size: pthread_mutex_unlock failed: %d", returnCode);
+      LOG_ERROR_ARGS ("EBPSreamBuffer: cb_read_size: pthread_mutex_unlock failed: %d", returnCode);
+      reportAddErrorLogArgs ("EBPSreamBuffer: cb_read_size: pthread_mutex_unlock failed: %d", returnCode);
       return -2;
    }
 
    return size;
 }
 
-int cb_available (circular_buffer_t *cb)
+int cb_available_write_size (circular_buffer_t *cb)
 {
-   printf ("cb->bufSz = %d\n", cb->bufSz);
-   return cb->bufSz - cb_size (cb);
+   return cb->bufSz - cb_read_size (cb);
 }
 
-int cb_size_internal (circular_buffer_t *cb)
+int cb_read_size_internal (circular_buffer_t *cb)
 {
    // WARNING: THIS FUNCTION DOES NOT LOCK THE MUTEX AND SHOULD ONLY
    // BE CALLED BY A FUNCTION THAT HAS ALREADY LOCKED IT
 
-   int size = 0;
-   if (cb->noWrites || cb->writePtr > cb->readPtr)
-   {
-      size = cb->writePtr - cb->readPtr;
-   }
-   else
-   {
-      size = cb->bufSz - (cb->readPtr - cb->writePtr);
-   }
+   return cb->bufSz * (cb->writeBufferTraversals - cb->readBufferTraversals) + cb->writePtr - cb->readPtr;
+}
 
-   return size;
+int cb_peek_size_internal (circular_buffer_t *cb)
+{
+   // WARNING: THIS FUNCTION DOES NOT LOCK THE MUTEX AND SHOULD ONLY
+   // BE CALLED BY A FUNCTION THAT HAS ALREADY LOCKED IT
+
+   return cb->bufSz * (cb->writeBufferTraversals - cb->peekBufferTraversals) + cb->writePtr - cb->peekPtr;
 }
 

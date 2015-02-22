@@ -34,6 +34,9 @@
 #include <hashtable.h>
 #include <hashtable_str.h>
 
+#include "ATSTestReport.h"
+
+
 DEFINE_HASHTABLE_INSERT(descriptor_table_insert, uint32_t, descriptor_table_entry_t);
 DEFINE_HASHTABLE_SEARCH(descriptor_table_search, uint32_t, descriptor_table_entry_t);
 DEFINE_HASHTABLE_REMOVE(descriptor_table_remove, uint32_t, descriptor_table_entry_t);
@@ -49,10 +52,12 @@ int register_descriptor(descriptor_table_entry_t *desc)
 // "factory methods"
 int read_descriptor_loop(vqarray_t *desc_list, bs_t *b, int length) 
 { 
+//   printf ("read_descriptor_loop\n");
    int desc_start = bs_pos(b); 
    
    while (length > bs_pos(b) - desc_start) 
    {
+//      printf ("read_descriptor_loop -- 1n");
       descriptor_t *desc = descriptor_new(); 
       desc = descriptor_read(desc, b); 
       vqarray_add(desc_list, desc);
@@ -100,6 +105,8 @@ descriptor_t* descriptor_read(descriptor_t *desc, bs_t *b)
 
    desc->tag = bs_read_u8(b);
    desc->length = bs_read_u8(b);
+
+//   printf ("descriptor_read: tag = %d, length = %d\n", desc->tag, desc->length);
 
    if (desc == NULL || b == NULL) return NULL;
    descriptor_table_entry_t *dte =
@@ -149,7 +156,7 @@ descriptor_t* language_descriptor_new(descriptor_t *desc)
    {
       ld = realloc(desc, sizeof(language_descriptor_t)); 
       ld->languages = NULL; 
-      ld->_num_languages = 0;
+      ld->num_languages = 0;
    }
    return (descriptor_t *)ld;
 }
@@ -176,6 +183,8 @@ descriptor_t* language_descriptor_read(descriptor_t *desc, bs_t *b)
    {
       LOG_ERROR_ARGS("Language descriptor has tag 0x%02X instead of expected 0x%02X", 
                      desc->tag, ISO_639_LANGUAGE_DESCRIPTOR); 
+      reportAddErrorLogArgs("Language descriptor has tag 0x%02X instead of expected 0x%02X", 
+                     desc->tag, ISO_639_LANGUAGE_DESCRIPTOR); 
       SAFE_REPORT_TS_ERR(-50); 
       return NULL;
    }
@@ -185,21 +194,27 @@ descriptor_t* language_descriptor_read(descriptor_t *desc, bs_t *b)
    ld->descriptor.tag = desc->tag; 
    ld->descriptor.length = desc->length; 
    
-   ld->_num_languages = ld->descriptor.length / 4; // language takes 4 bytes
+   ld->num_languages = ld->descriptor.length / 4; // language takes 4 bytes
    
-   if (ld->_num_languages > 0) 
+   if (ld->num_languages > 0) 
    {
-      ld->languages = malloc(ld->_num_languages * sizeof(language_descriptor_t)); 
-      for (int i = 0; i < ld->_num_languages; i++) 
+      ld->languages = malloc(ld->num_languages * sizeof(language_descriptor_t)); 
+      for (int i = 0; i < ld->num_languages; i++) 
       {
          ld->languages[i].ISO_639_language_code[0] = bs_read_u8(b); 
          ld->languages[i].ISO_639_language_code[1] = bs_read_u8(b); 
          ld->languages[i].ISO_639_language_code[2] = bs_read_u8(b); 
          ld->languages[i].ISO_639_language_code[3] = 0; 
          ld->languages[i].audio_type = bs_read_u8(b);
+//         printf ("language_descriptor_read: %s, %x\n", ld->languages[i].ISO_639_language_code,
+//            ld->languages[i].audio_type);
       }
    }
-   
+
+ /*  printf ("language_descriptor_read: %x %x %x, %x\n", ld->languages[i].ISO_639_language_code[0],
+      ld->languages[i].ISO_639_language_code[1], ld->languages[i].ISO_639_language_code[2],
+      ld->languages[i].audio_type);
+   */
    free(desc); 
    return (descriptor_t *)ld;
 }
@@ -215,14 +230,152 @@ int language_descriptor_print(const descriptor_t *desc, int level, char *str, si
    bytes += SKIT_LOG_UINT_VERBOSE(str + bytes, level, desc->tag, "ISO_639_language_descriptor", str_len - bytes); 
    bytes += SKIT_LOG_UINT(str + bytes, level, desc->length, str_len - bytes); 
    
-   if (ld->_num_languages > 0) 
+   if (ld->num_languages > 0) 
    {
-      for (int i = 0; i < ld->_num_languages; i++) 
+      for (int i = 0; i < ld->num_languages; i++) 
       {
          bytes += SKIT_LOG_STR(str + bytes, level, strtol(ld->languages[i].ISO_639_language_code, NULL, 10), str_len - bytes); 
          bytes += SKIT_LOG_UINT(str + bytes, level, ld->languages[i].audio_type, str_len - bytes);
       }
    }
+   
+   return bytes;
+}
+
+
+descriptor_t* component_name_descriptor_new(descriptor_t *desc) 
+{ 
+   component_name_descriptor_t *cnd = NULL; 
+   if (desc == NULL) 
+   {
+      cnd = (component_name_descriptor_t *)calloc(1, sizeof(component_name_descriptor_t)); 
+      cnd->descriptor.tag = COMPONENT_NAME_DESCRIPTOR;
+   } 
+   else 
+   {
+      cnd = realloc(desc, sizeof(component_name_descriptor_t)); 
+      cnd->num_names = 0;
+      cnd->names = NULL; 
+      cnd->languages = NULL; 
+   }
+
+   return (descriptor_t *)cnd;
+}
+
+int component_name_descriptor_free(descriptor_t *desc)
+{ 
+   if (desc == NULL) return 0;
+   if (desc->tag != COMPONENT_NAME_DESCRIPTOR) return 0;
+
+   component_name_descriptor_t *cnd = (component_name_descriptor_t *)desc;
+
+   for (int i=0; i<cnd->num_names; i++)
+   {
+      if (cnd->names[i] != NULL) free (cnd->names[i]);
+   }
+
+   if (cnd->names != NULL) free(cnd->names);
+   if (cnd->languages != NULL) free(cnd->languages);
+
+   free(cnd);
+   
+   return 1;
+}
+
+descriptor_t* component_name_descriptor_read(descriptor_t *desc, bs_t *b) 
+{ 
+   if ((desc == NULL) || (b == NULL)) 
+   {
+      SAFE_REPORT_TS_ERR(-1); 
+      return NULL;
+   }
+   if (desc->tag != COMPONENT_NAME_DESCRIPTOR) 
+   {
+      LOG_ERROR_ARGS("Component Name descriptor has tag 0x%02X instead of expected 0x%02X", 
+                     desc->tag, COMPONENT_NAME_DESCRIPTOR); 
+      reportAddErrorLogArgs("Component Name descriptor has tag 0x%02X instead of expected 0x%02X", 
+                     desc->tag, COMPONENT_NAME_DESCRIPTOR); 
+      SAFE_REPORT_TS_ERR(-50); 
+      return NULL;
+   }
+   
+   component_name_descriptor_t *cnd = (component_name_descriptor_t *)calloc(1, sizeof(component_name_descriptor_t)); 
+   
+   cnd->descriptor.tag = desc->tag; 
+   cnd->descriptor.length = desc->length; 
+      
+   cnd->num_names = bs_read_u8(b); 
+
+   cnd->languages = (iso639_lang_t*) calloc (cnd->num_names, sizeof(iso639_lang_t));
+   cnd->names = (char **)calloc (cnd->num_names, sizeof(char *));
+
+   for (int i=0; i<cnd->num_names; i++)
+   {
+      cnd->languages[i].ISO_639_language_code[0] = bs_read_u8(b); 
+      cnd->languages[i].ISO_639_language_code[1] = bs_read_u8(b); 
+      cnd->languages[i].ISO_639_language_code[2] = bs_read_u8(b); 
+      cnd->languages[i].ISO_639_language_code[3] = 0; 
+
+      int totalNumBytes = 0;
+      uint8_t num_segments = bs_read_u8(b); 
+      for (int j=0; j< num_segments; j++) 
+      {
+         uint8_t compression_type = bs_read_u8(b); 
+         uint8_t mode = bs_read_u8(b); 
+         uint8_t number_bytes = bs_read_u8(b); 
+            
+         cnd->names[i] = (char *)realloc (cnd->names[i], totalNumBytes + number_bytes);
+         bs_read_bytes(b, (uint8_t*)(cnd->names[i] + totalNumBytes), number_bytes); 
+
+         totalNumBytes += number_bytes;
+
+         if (compression_type != 0)
+         {
+            // GORP: error here -- not supported
+            // but I think this will still work since we are just comparing -- if
+            // all streams use same compression!
+         }
+      }
+   }
+
+   /*
+   multiple_string_structure() 
+   {
+      number_strings (8 uimsbf)
+      for (i=0; i< number_strings; i++) 
+      {
+         ISO_639_language_code (24 uimsbf)
+         number_segments (8 uimsbf)
+         for (j=0; j< number_segments; j++) 
+         {
+            compression_type (8 uimsbf)
+            mode (8 uimsbf)
+            number_bytes (8 uimsbf)
+            for (k=0; k< number_bytes; k++)
+            {
+               compressed_string_byte [k] (8 bslbf)
+            }
+         }
+      }
+   }
+   */
+
+   free(desc); 
+   return (descriptor_t *)cnd;
+}
+
+int component_name_descriptor_print(const descriptor_t *desc, int level, char *str, size_t str_len) 
+{ 
+   int bytes = 0; 
+   if (desc == NULL) return 0; 
+   if (desc->tag != COMPONENT_NAME_DESCRIPTOR) return 0; 
+   
+   component_name_descriptor_t *ld = (component_name_descriptor_t *)desc; 
+   
+   bytes += SKIT_LOG_UINT_VERBOSE(str + bytes, level, desc->tag, "component_name_descriptor", str_len - bytes); 
+   bytes += SKIT_LOG_UINT(str + bytes, level, desc->length, str_len - bytes); 
+// GORP: fix this
+//   bytes += SKIT_LOG_STR(str + bytes, level, ld->name, str_len - bytes); 
    
    return bytes;
 }
@@ -335,6 +488,150 @@ int max_bitrate_descriptor_print(const descriptor_t *desc, int level, char *str,
    return bytes;
 }
 
+/*
+descriptor_tag (8)
+descriptor_length	(8)
+sample_rate_code	(3)
+bsid	(5)
+bit_rate_code	(6)
+surround_mode	(2)
+bsmod	(3)
+num_channels	(4)
+full_svc	(1)
+langcod	(8)
+if num_channels==0
+  langcod2	(8)
+if bsmod<2
+  mainid	(3)	
+  priority	(2)
+  reserved	(3)
+else
+  asvcflags	(8)
+end if
+textlen	(7)	//'0000000'
+text_code	(1)	//'0'
+language_flag	(1)
+language_flag_2	(1)  //	'0'
+reserved	(6)	// '111111'
+if language_flag == 1
+  language	(3*8)
+*/
+
+descriptor_t* ac3_descriptor_new(descriptor_t *desc) 
+{ 
+   ac3_descriptor_t *ld = NULL; 
+   if (desc == NULL) 
+   {
+      ld = (ac3_descriptor_t *)calloc(1, sizeof(ac3_descriptor_t)); 
+      ld->descriptor.tag = AC3_DESCRIPTOR;
+   } 
+   else 
+   {
+      ld = realloc(desc, sizeof(ac3_descriptor_t)); 
+   }
+   return (descriptor_t *)ld;
+}
+
+int ac3_descriptor_free(descriptor_t *desc)
+{ 
+   if (desc == NULL) return 0;
+   if (desc->tag != AC3_DESCRIPTOR) return 0;
+
+   ac3_descriptor_t *ld = (ac3_descriptor_t *)desc;
+
+   free(ld);
+   return 1;
+}
+
+descriptor_t* ac3_descriptor_read(descriptor_t *desc, bs_t *b) 
+{ 
+   if ((desc == NULL) || (b == NULL)) 
+   {
+      SAFE_REPORT_TS_ERR(-1); 
+      return NULL;
+   }
+   if (desc->tag != AC3_DESCRIPTOR) 
+   {
+      LOG_ERROR_ARGS("AC3 descriptor has tag 0x%02X instead of expected 0x%02X", 
+                     desc->tag, AC3_DESCRIPTOR); 
+      reportAddErrorLogArgs("AC3 descriptor has tag 0x%02X instead of expected 0x%02X", 
+                     desc->tag, AC3_DESCRIPTOR); 
+      SAFE_REPORT_TS_ERR(-50); 
+      return NULL;
+   }
+   
+   ac3_descriptor_t *ac3d = (ac3_descriptor_t *)calloc(1, sizeof(ac3_descriptor_t)); 
+   
+   ac3d->descriptor.tag = desc->tag; 
+   ac3d->descriptor.length = desc->length; 
+
+   ac3d->sample_rate_code = bs_read_u(b, 3);
+   ac3d->bsid = bs_read_u(b, 5);
+   ac3d->bit_rate_code = bs_read_u(b, 6);
+   ac3d->surround_mode = bs_read_u(b, 2);
+   ac3d->bsmod = bs_read_u(b, 3);
+   ac3d->num_channels = bs_read_u(b, 4);
+   ac3d->full_svc = bs_read_u(b, 1);
+   ac3d->langcod = bs_read_u8(b);
+
+   if (ac3d->num_channels==0)   ac3d->langcod2 = bs_read_u8(b);
+
+   if (ac3d->bsmod<2)
+   {
+      ac3d->mainid = bs_read_u(b, 3);
+      ac3d->priority = bs_read_u(b, 2);
+      bs_read_u(b, 3);  // reserved -- discard
+   }
+   else
+   {
+      ac3d->asvcflags = bs_read_u8(b);
+   }
+
+   ac3d->textlen = bs_read_u(b, 7);
+   ac3d->text_code = bs_read_u(b, 1);
+   ac3d->language_flag = bs_read_u(b, 1);
+   ac3d->language_flag_2 = bs_read_u(b, 1);
+   bs_read_u(b, 6);  // reserved -- discard
+
+   if (ac3d->language_flag == 1)
+   {
+      ac3d->language[0] = bs_read_u8(b); 
+      ac3d->language[1] = bs_read_u8(b); 
+      ac3d->language[2] = bs_read_u8(b); 
+      ac3d->language[3] = 0; 
+   }
+
+   free(desc); 
+   return (descriptor_t *)ac3d;
+}
+
+int ac3_descriptor_print(const descriptor_t *desc, int level, char *str, size_t str_len) 
+{ 
+   int bytes = 0; 
+   if (desc == NULL) return 0; 
+   if (desc->tag != AC3_DESCRIPTOR) return 0; 
+   
+   ac3_descriptor_t *ld = (ac3_descriptor_t *)desc; 
+
+   // GORP: fill in
+   
+/*   bytes += SKIT_LOG_UINT_VERBOSE(str + bytes, level, desc->tag, "ISO_639_language_descriptor", str_len - bytes); 
+   bytes += SKIT_LOG_UINT(str + bytes, level, desc->length, str_len - bytes); 
+   
+   if (ld->num_languages > 0) 
+   {
+      for (int i = 0; i < ld->num_languages; i++) 
+      {
+         bytes += SKIT_LOG_STR(str + bytes, level, strtol(ld->languages[i].ISO_639_language_code, NULL, 10), str_len - bytes); 
+         bytes += SKIT_LOG_UINT(str + bytes, level, ld->languages[i].audio_type, str_len - bytes);
+      }
+   }
+   */
+   
+   return bytes;
+}
+
+
 void init_descriptors()
 {
    if (g_descriptor_table != NULL)
@@ -352,6 +649,22 @@ void init_descriptors()
    d->free_descriptor = language_descriptor_free;
    d->print_descriptor = language_descriptor_print;
    d->read_descriptor = language_descriptor_read;
+   register_descriptor(d);
+
+   // Component Name Descriptor
+   d = calloc(1, sizeof(descriptor_table_entry_t));
+   d->tag = COMPONENT_NAME_DESCRIPTOR;
+   d->free_descriptor = component_name_descriptor_free;
+   d->print_descriptor = component_name_descriptor_print;
+   d->read_descriptor = component_name_descriptor_read;
+   register_descriptor(d);
+
+   // Component Name Descriptor
+   d = calloc(1, sizeof(descriptor_table_entry_t));
+   d->tag = AC3_DESCRIPTOR;
+   d->free_descriptor = ac3_descriptor_free;
+   d->print_descriptor = ac3_descriptor_print;
+   d->read_descriptor = ac3_descriptor_read;
    register_descriptor(d);
 
    // CA descriptor

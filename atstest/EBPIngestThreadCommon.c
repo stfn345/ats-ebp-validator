@@ -29,11 +29,15 @@
 
 #include "h264_stream.h"
 
+#include "ATSTestReport.h"
+
 #include "EBPSegmentAnalysisThread.h"
 #include "EBPFileIngestThread.h"
 #include "EBPThreadLogging.h"
 
 #include "ATSTestDefines.h"
+#include "ATSTestReport.h"
+
 
 
 static char *STREAM_TYPE_UNKNOWN = "UNKNOWN";
@@ -82,7 +86,9 @@ static int validate_pes_packet(pes_packet_t *pes, elementary_stream_info_t *esi,
    if (fifo == NULL)
    {
       // this should never happen -- maybe this should be fatal
-      LOG_ERROR_ARGS("FileIngestThread %d: FAIL: Cannot find fifo for PID %d (%s)", 
+      LOG_ERROR_ARGS("IngestThread %d: FAIL: Cannot find fifo for PID %d (%s)", 
+         ebpIngestThreadParams->threadNum, esi->elementary_PID, getStreamTypeDesc (esi));
+      reportAddErrorLogArgs("IngestThread %d: FAIL: Cannot find fifo for PID %d (%s)", 
          ebpIngestThreadParams->threadNum, esi->elementary_PID, getStreamTypeDesc (esi));
 
       ebpIngestThreadParams->ingestPassFail = 0;
@@ -103,14 +109,16 @@ static int validate_pes_packet(pes_packet_t *pes, elementary_stream_info_t *esi,
 
    if (ebp != NULL)
    {
-      LOG_INFO_ARGS("FileIngestThread %d: Found EBP data in transport packet: PID %d (%s)", 
+      LOG_DEBUG_ARGS("IngestThread %d: Found EBP data in transport packet: PID %d (%s)", 
          ebpIngestThreadParams->threadNum, esi->elementary_PID, getStreamTypeDesc (esi));
 //      ebp_print_stdout(ebp);
          
       if (ebp_validate_groups(ebp) != 0)
       {
          // if there is a ebp in the stream, then we need an ebp_descriptor to interpret it
-         LOG_ERROR_ARGS("FileIngestThread %d: FAIL: EBP group validation failed: PID %d (%s)", 
+         LOG_ERROR_ARGS("IngestThread %d: FAIL: EBP group validation failed: PID %d (%s)", 
+            ebpIngestThreadParams->threadNum, esi->elementary_PID, getStreamTypeDesc (esi));
+         reportAddErrorLogArgs("IngestThread %d: FAIL: EBP group validation failed: PID %d (%s)", 
             ebpIngestThreadParams->threadNum, esi->elementary_PID, getStreamTypeDesc (esi));
 
          streamInfo->streamPassFail = 0;
@@ -121,8 +129,8 @@ static int validate_pes_packet(pes_packet_t *pes, elementary_stream_info_t *esi,
    // isBoundary is an array indexed by PartitionId -- we will analyze the segment once
    // for each partition that triggered a boundary
    int *isBoundary = (int *)calloc (EBP_NUM_PARTITIONS, sizeof(int));
- //  LOG_INFO_ARGS("EBPFileIngestThread %d: Calling detectBoundary. (PID %d)", 
- //           ebpFileIngestThreadParams->threadNum, esi->elementary_PID);
+ //  LOG_INFO_ARGS("EBPIngestThread %d: Calling detectBoundary. (PID %d)", 
+ //           ebpIngestThreadParams->threadNum, esi->elementary_PID);
    int boundaryDetected = detectBoundary(ebpIngestThreadParams->threadNum, ebp, 
       streamInfo, pes->header.PTS, isBoundary);
 
@@ -149,7 +157,7 @@ static int validate_pes_packet(pes_packet_t *pes, elementary_stream_info_t *esi,
          if (ATS_TEST_CASE_ACQUISITION_TIME_NOT_PRESENT != 0 && ebp_copy != NULL && 
             ebpIngestThreadParams->threadNum == 0)
          {
-            LOG_INFO_ARGS("FileIngestThread %d: ATS_TEST_CASE_ACQUISITION_TIME_NOT_PRESENT: ebp_copy->ebp_time_flag before: %d", 
+            LOG_INFO_ARGS("IngestThread %d: ATS_TEST_CASE_ACQUISITION_TIME_NOT_PRESENT: ebp_copy->ebp_time_flag before: %d", 
                ebpIngestThreadParams->threadNum, ebp_copy->ebp_time_flag);
             ebp_copy->ebp_time_flag = 0;
          }
@@ -163,7 +171,7 @@ static int validate_pes_packet(pes_packet_t *pes, elementary_stream_info_t *esi,
             {
                ebp_copy->ebp_acquisition_time = 180000;
             }
-            LOG_INFO_ARGS("FileIngestThread %d: ATS_TEST_CASE_ACQUISITION_TIME_MISMATCH: ebp_copy->ebp_acquisition_time: %"PRId64"", 
+            LOG_INFO_ARGS("IngestThread %d: ATS_TEST_CASE_ACQUISITION_TIME_MISMATCH: ebp_copy->ebp_acquisition_time: %"PRId64"", 
                ebpIngestThreadParams->threadNum, ebp_copy->ebp_acquisition_time);
          }
 
@@ -173,7 +181,9 @@ static int validate_pes_packet(pes_packet_t *pes, elementary_stream_info_t *esi,
             ebpIngestThreadParams->allStreamInfos);
          if (returnCode != 0)
          {
-            LOG_ERROR_ARGS("FileIngestThread %d: FAIL: Error posting to FIFO for partition %d: PID %d (%s)", 
+            LOG_ERROR_ARGS("IngestThread %d: FAIL: Error posting to FIFO for partition %d: PID %d (%s)", 
+               ebpIngestThreadParams->threadNum, i, esi->elementary_PID, getStreamTypeDesc (esi));
+            reportAddErrorLogArgs("IngestThread %d: FAIL: Error posting to FIFO for partition %d: PID %d (%s)", 
                ebpIngestThreadParams->threadNum, i, esi->elementary_PID, getStreamTypeDesc (esi));
 
             streamInfo->streamPassFail = 0;
@@ -202,7 +212,10 @@ static int validate_pes_packet(pes_packet_t *pes, elementary_stream_info_t *esi,
            // this is an audio stream, so check that audio does not lag video by more than 3 seconds
             if (pes->header.PTS > (streamInfo->lastVideoChunkPTS + 3 * 90000))  // PTS is 90kHz ticks
             {
-               LOG_ERROR_ARGS("FileIngestThread %d: FAIL: Audio PTS (%"PRId64") lags video PTS (%"PRId64") by more than 3 seconds: PID %d (%s)", 
+               LOG_ERROR_ARGS("IngestThread %d: FAIL: Audio PTS (%"PRId64") lags video PTS (%"PRId64") by more than 3 seconds: PID %d (%s)", 
+                  ebpIngestThreadParams->threadNum, pes->header.PTS, streamInfo->lastVideoChunkPTS, 
+                  esi->elementary_PID, getStreamTypeDesc (esi));
+               reportAddErrorLogArgs("IngestThread %d: FAIL: Audio PTS (%"PRId64") lags video PTS (%"PRId64") by more than 3 seconds: PID %d (%s)", 
                   ebpIngestThreadParams->threadNum, pes->header.PTS, streamInfo->lastVideoChunkPTS, 
                   esi->elementary_PID, getStreamTypeDesc (esi));
 
@@ -285,6 +298,8 @@ uint32_t getSAPType_MPEG2_AAC(pes_packet_t *pes, ts_packet_t *first_ts)
    else
    {
       LOG_ERROR_ARGS("getSAPType_MPEG2_AAC: SAP_STREAM_TYPE_ERROR: Expected sync word = %x. Actual sync word = %x",
+         syncWordExpected, syncWordActual);
+      reportAddErrorLogArgs("getSAPType_MPEG2_AAC: SAP_STREAM_TYPE_ERROR: Expected sync word = %x. Actual sync word = %x",
          syncWordExpected, syncWordActual);
       return SAP_STREAM_TYPE_ERROR;
    }
@@ -389,7 +404,9 @@ ebp_t* getEBP(ts_packet_t *ts, ebp_stream_info_t * streamInfo, int threadNum)
       {
          if (found_ebp)
          {
-            LOG_ERROR_ARGS("FileIngestThread %d: FAIL: Multiple EBP structures detected with a single PES packet: PID %d", 
+            LOG_ERROR_ARGS("IngestThread %d: FAIL: Multiple EBP structures detected with a single PES packet: PID %d", 
+               threadNum, streamInfo->PID);
+            reportAddErrorLogArgs("IngestThread %d: FAIL: Multiple EBP structures detected with a single PES packet: PID %d", 
                threadNum, streamInfo->PID);
 
             streamInfo->streamPassFail = 0;
@@ -401,7 +418,9 @@ ebp_t* getEBP(ts_packet_t *ts, ebp_stream_info_t * streamInfo, int threadNum)
 
          if (!ts->header.payload_unit_start_indicator) 
          {
-            LOG_ERROR_ARGS("FileIngestThread %d: FAIL: EBP present on a TS packet that does not have PUSI bit set: PID %d", 
+            LOG_ERROR_ARGS("IngestThread %d: FAIL: EBP present on a TS packet that does not have PUSI bit set: PID %d", 
+               threadNum, streamInfo->PID);
+            reportAddErrorLogArgs("IngestThread %d: FAIL: EBP present on a TS packet that does not have PUSI bit set: PID %d", 
                threadNum, streamInfo->PID);
 
             streamInfo->streamPassFail = 0;
@@ -413,7 +432,9 @@ ebp_t* getEBP(ts_packet_t *ts, ebp_stream_info_t * streamInfo, int threadNum)
          ebp = ebp_new();
          if (!ebp_read(ebp, scte128))
          {
-            LOG_ERROR_ARGS("FileIngestThread %d: FAIL: Error parsing EBP: PID %d", 
+            LOG_ERROR_ARGS("IngestThread %d: FAIL: Error parsing EBP: PID %d", 
+               threadNum, streamInfo->PID);
+            reportAddErrorLogArgs("IngestThread %d: FAIL: Error parsing EBP: PID %d", 
                threadNum, streamInfo->PID);
 
             streamInfo->streamPassFail = 0;
@@ -591,7 +612,6 @@ int ingest_pmt_processor(mpeg2ts_program_t *m2p, void *arg)
 
 int ingest_pat_processor(mpeg2ts_stream_t *m2s, void *arg)
 {
-
    for (int i = 0; i < vqarray_length(m2s->programs); i++)
    {
       mpeg2ts_program_t *m2p = vqarray_get(m2s->programs, i);
@@ -656,17 +676,28 @@ int postToFIFO  (uint64_t PTS, uint32_t sapType, ebp_t *ebp, ebp_descriptor_t *e
    if (fifo == NULL)
    {
       // this should never happen
-      LOG_ERROR_ARGS ("EBPFileIngestThread %d: FAIL: FIFO not found for PID %d", 
+      LOG_ERROR_ARGS ("EBPIngestThread %d: FAIL: FIFO not found for PID %d", 
+         threadNum, PID);
+      reportAddErrorLogArgs ("EBPIngestThread %d: FAIL: FIFO not found for PID %d", 
          threadNum, PID);
       return -1;
    }
 
-   LOG_INFO_ARGS ("EBPFileIngestThread %d: POSTING PTS %"PRId64" to for partition %d FIFO (PID %d)", 
-      threadNum, PTS, partitionId, PID);
+   LOG_INFO_ARGS ("EBPIngestThread %d: POSTING PTS %"PRId64" for partition %d to FIFO %d (PID %d)", 
+      threadNum, PTS, partitionId, (streamInfos[fifoIndex])->fifo->id, PID);
+ //  reportAddPTS (PTS, partitionId, threadNum, (streamInfos[fifoIndex])->fifo->id, PID);
+   
+   reportAddInfoLogArgs ("EBPIngestThread %d: POSTING PTS %"PRId64" for partition %d to FIFO %d (PID %d)", 
+      threadNum, PTS, partitionId, (streamInfos[fifoIndex])->fifo->id, PID);
+
+   reportAddPTS (PTS, partitionId, threadNum, fifoIndex, PID);
+
    int returnCode = fifo_push (fifo, ebpSegmentInfo);
    if (returnCode != 0)
    {
-      LOG_ERROR_ARGS ("EBPFileIngestThread %d: FATAL error %d calling fifo_push on fifo %d (PID %d)", 
+      LOG_ERROR_ARGS ("EBPIngestThread %d: FATAL error %d calling fifo_push on fifo %d (PID %d)", 
+         threadNum, returnCode, (streamInfos[fifoIndex])->fifo->id, PID);
+      reportAddErrorLogArgs ("EBPIngestThread %d: FATAL error %d calling fifo_push on fifo %d (PID %d)", 
          threadNum, returnCode, (streamInfos[fifoIndex])->fifo->id, PID);
       exit (-1);
    }
@@ -694,7 +725,7 @@ void triggerImplicitBoundaries (int threadNum, ebp_stream_info_t **streamInfoArr
             (ebpBoundaryInfo[partitionId].implicitFileIndex == currentFileIndex) &&
             (ebpBoundaryInfo[partitionId].implicitPID == currentPID))
          {
-            LOG_INFO_ARGS("EBPFileIngestThread %d: Triggering implicit boundary", 
+            LOG_INFO_ARGS("EBPIngestThread %d: Triggering implicit boundary", 
                      currentFileIndex);
                
             uint64_t *PTSTemp = (uint64_t *)malloc(sizeof(uint64_t));
@@ -725,7 +756,7 @@ int detectBoundary(int threadNum, ebp_t* ebp, ebp_stream_info_t *streamInfo, uin
          uint64_t *PTSTemp = (uint64_t *) varray_peek(ebpBoundaryInfo[i].queueLastImplicitPTS);
 /*         if (i == 1 || i == 2)
          {
-            LOG_INFO_ARGS("EBPFileIngestThread %d: detectBoundary partition %d: lastImplicitPTS = %"PRId64", PTS = %"PRId64" (PID %d)", 
+            LOG_INFO_ARGS("EBPIngestThread %d: detectBoundary partition %d: lastImplicitPTS = %"PRId64", PTS = %"PRId64" (PID %d)", 
                   threadNum, i, *PTSTemp, PTS, streamInfo->PID);
          }
          */
@@ -751,7 +782,9 @@ int detectBoundary(int threadNum, ebp_t* ebp, ebp_stream_info_t *streamInfo, uin
       {
          if (ebpBoundaryInfo[EBP_PARTITION_SEGMENT].isImplicit)
          {
-            LOG_ERROR_ARGS("FileIngestThread %d: FAIL: Unexpected EBP struct detected for partition %d: PID %d", 
+            LOG_ERROR_ARGS("EBPIngestThread %d: FAIL: Unexpected EBP struct detected for partition %d: PID %d", 
+               threadNum, EBP_PARTITION_SEGMENT, streamInfo->PID);
+            reportAddErrorLogArgs("EBPIngestThread %d: FAIL: Unexpected EBP struct detected for partition %d: PID %d", 
                threadNum, EBP_PARTITION_SEGMENT, streamInfo->PID);
          }
          else
@@ -762,7 +795,9 @@ int detectBoundary(int threadNum, ebp_t* ebp, ebp_stream_info_t *streamInfo, uin
       }
       else
       {
-         LOG_ERROR_ARGS("FileIngestThread %d: FAIL: Unexpected EBP struct detected for partition %d: PID %d", 
+         LOG_ERROR_ARGS("IngestThread %d: FAIL: Unexpected EBP struct detected for partition %d: PID %d", 
+            threadNum, EBP_PARTITION_SEGMENT, streamInfo->PID);
+         reportAddErrorLogArgs("IngestThread %d: FAIL: Unexpected EBP struct detected for partition %d: PID %d", 
             threadNum, EBP_PARTITION_SEGMENT, streamInfo->PID);
       }
    }
@@ -773,7 +808,9 @@ int detectBoundary(int threadNum, ebp_t* ebp, ebp_stream_info_t *streamInfo, uin
       {
          if (ebpBoundaryInfo[EBP_PARTITION_FRAGMENT].isImplicit)
          {
-            LOG_ERROR_ARGS("FileIngestThread %d: FAIL: Unexpected EBP struct detected for partition %d: PID %d", 
+            LOG_ERROR_ARGS("IngestThread %d: FAIL: Unexpected EBP struct detected for partition %d: PID %d", 
+               threadNum, EBP_PARTITION_FRAGMENT, streamInfo->PID);
+            reportAddErrorLogArgs("IngestThread %d: FAIL: Unexpected EBP struct detected for partition %d: PID %d", 
                threadNum, EBP_PARTITION_FRAGMENT, streamInfo->PID);
          }
          else
@@ -784,7 +821,9 @@ int detectBoundary(int threadNum, ebp_t* ebp, ebp_stream_info_t *streamInfo, uin
       }
       else
       {
-         LOG_ERROR_ARGS("FileIngestThread %d: FAIL: Unexpected EBP struct detected for partition %d: PID %d", 
+         LOG_ERROR_ARGS("IngestThread %d: FAIL: Unexpected EBP struct detected for partition %d: PID %d", 
+            threadNum, EBP_PARTITION_FRAGMENT, streamInfo->PID);
+         reportAddErrorLogArgs("IngestThread %d: FAIL: Unexpected EBP struct detected for partition %d: PID %d", 
             threadNum, EBP_PARTITION_FRAGMENT, streamInfo->PID);
       }
    }
@@ -803,7 +842,9 @@ int detectBoundary(int threadNum, ebp_t* ebp, ebp_stream_info_t *streamInfo, uin
             {
                if (ebpBoundaryInfo[i].isImplicit)
                {
-                  LOG_ERROR_ARGS("FileIngestThread %d: FAIL: Unexpected EBP struct detected for partition %d: PID %d", 
+                  LOG_ERROR_ARGS("IngestThread %d: FAIL: Unexpected EBP struct detected for partition %d: PID %d", 
+                     threadNum, i, streamInfo->PID);
+                  reportAddErrorLogArgs("IngestThread %d: FAIL: Unexpected EBP struct detected for partition %d: PID %d", 
                      threadNum, i, streamInfo->PID);
                }
                else
@@ -814,7 +855,9 @@ int detectBoundary(int threadNum, ebp_t* ebp, ebp_stream_info_t *streamInfo, uin
             }
             else
             {
-               LOG_ERROR_ARGS("FileIngestThread %d: FAIL: Unexpected EBP struct detected for partition %d: PID %d", 
+               LOG_ERROR_ARGS("IngestThread %d: FAIL: Unexpected EBP struct detected for partition %d: PID %d", 
+                  threadNum, i, streamInfo->PID);
+               reportAddErrorLogArgs("IngestThread %d: FAIL: Unexpected EBP struct detected for partition %d: PID %d", 
                   threadNum, i, streamInfo->PID);
             }
          }

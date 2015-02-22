@@ -27,24 +27,32 @@ typedef struct
    int bufSz;
    uint8_t* writePtr;
    uint8_t* readPtr;
+   uint8_t* peekPtr;
+
+   unsigned int writeBufferTraversals;
+   unsigned int readBufferTraversals;
+   unsigned int peekBufferTraversals;
 
    pthread_mutex_t mutex;
    pthread_cond_t cb_nonempty_cond;
 
-   int noWrites;
+   int disabled;
 
 } circular_buffer_t;
 
 int cb_init (circular_buffer_t *cb, int bufferSz);
 void cb_free (circular_buffer_t *cb);
+void cb_empty (circular_buffer_t *cb);
+int cb_disable (circular_buffer_t *cb);
+int cb_is_disabled (circular_buffer_t *cb);
 
 int cb_peek (circular_buffer_t *cb, uint8_t* bytes, int bytesSz);
 int cb_read (circular_buffer_t *cb, uint8_t* bytes, int bytesSz);
 int cb_read_or_peek (circular_buffer_t *cb, uint8_t* bytes, int bytesSz, int isPeek);
 int cb_write (circular_buffer_t *cb, uint8_t* bytes, int bytesSz);
 
-int cb_size (circular_buffer_t *cb);
-int cb_available (circular_buffer_t *cb);
+int cb_read_size (circular_buffer_t *cb);
+int cb_available_write_size (circular_buffer_t *cb);
 
 
 #endif  // __H_EBP_STREAM_BUFFER_

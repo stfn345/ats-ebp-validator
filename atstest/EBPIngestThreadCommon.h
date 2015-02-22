@@ -33,7 +33,6 @@ typedef struct
 
 } ebp_ingest_thread_params_t;
 
-// GORP void cleanupAndExit(ebp_file_ingest_thread_params_t *ebpFileIngestThreadParams);
 int postToFIFO (uint64_t PTS, uint32_t sapType, ebp_t *ebp, ebp_descriptor_t *ebpDescriptor, uint32_t PID, 
                  uint8_t partitionId, int threadNum, int numStreams, ebp_stream_info_t **allStreamInfos);
 
@@ -52,8 +51,6 @@ ebp_t* getEBP(ts_packet_t *ts, ebp_stream_info_t * streamInfo, int threadNum);
 int detectBoundary(int threadNum, ebp_t* ebp, ebp_stream_info_t *streamInfo, uint64_t PTS, int *isBoundary);
 void triggerImplicitBoundaries (int threadNum, ebp_stream_info_t **streamInfoArray, int numStreams, int numFiles,
    int currentStreamInfoIndex, uint64_t PTS, uint8_t partitionId, int fileIndex);
-
-// GORPvoid *EBPFileIngestThreadProc(void *threadParams);
 
 uint32_t getSAPType(pes_packet_t *pes, ts_packet_t *first_ts,  uint32_t streamType);
 uint32_t getSAPType_AVC(pes_packet_t *pes, ts_packet_t *first_ts);

@@ -36,6 +36,7 @@
 
 pes_demux_t* pes_demux_new(pes_processor_t pes_processor) 
 { 
+   
    pes_demux_t *pdm = malloc(sizeof(pes_demux_t)); 
    if (pdm != NULL) 
    {
@@ -84,17 +85,15 @@ int pes_demux_process_ts_packet(ts_packet_t *ts, elementary_stream_info_t *es_in
          // we have something in the queue
          // chances are this is a PES packet
          int i;
+         
          ts_packet_t *tsp = vqarray_get(pdm->ts_queue, 0);
          if (tsp->header.payload_unit_start_indicator == 0)
          {
             // the queue doesn't start with a complete TS packet
-            LOG_ERROR("PES queue does not start from PUSI=1");
-            // we'll do nothing and just clear the queue
-            if (pdm->process_pes_packet != NULL) 
-            {
-               // at this point we don't own the PES packet memory
-               pdm->process_pes_packet( NULL, es_info, pdm->ts_queue, pdm->pes_arg);  
-            }
+            LOG_WARN("PES queue does not start from PUSI=1");
+
+            // this will occur if we start ingestng a stream at an arbitrary point, in 
+            // the middle of a PES packet
          }
          else
          {

@@ -91,6 +91,9 @@ typedef enum {
     ADAPTATION_FIELD_DATA_DESCRIPTOR = 0x97,
     // end of SCTE 128 descriptors
 
+    AC3_DESCRIPTOR = 0x81,
+    COMPONENT_NAME_DESCRIPTOR = 0xA3,
+
 } mpeg_descriptor_t;
 
 typedef struct {
@@ -135,13 +138,43 @@ typedef struct {
 typedef struct {
 	descriptor_t descriptor;
 	iso639_lang_t* languages;
-	int _num_languages;
+	int num_languages;
 } language_descriptor_t;
 
 //descriptor_t* language_descriptor_new(descriptor_t* desc);
 //int language_descriptor_free(descriptor_t* desc);
 //descriptor_t* language_descriptor_read(descriptor_t* desc, bs_t* b);
 //int language_descriptor_print(const descriptor_t* desc, int level, char* str, size_t str_len);
+
+typedef struct {
+	descriptor_t descriptor;
+	int num_names;
+	iso639_lang_t* languages;
+	char **names;
+} component_name_descriptor_t;
+
+typedef struct {
+	descriptor_t descriptor;
+
+   uint8_t sample_rate_code;
+   uint8_t bsid;
+   uint8_t bit_rate_code;
+   uint8_t surround_mode;
+   uint8_t bsmod;
+   uint8_t num_channels;
+   uint8_t full_svc;
+   uint8_t langcod;
+   uint8_t langcod2;
+   uint8_t mainid;
+   uint8_t priority;
+   uint8_t asvcflags;
+   uint8_t textlen;
+   uint8_t text_code;
+   uint8_t language_flag;
+   uint8_t language_flag_2;
+	char language[4];
+
+} ac3_descriptor_t;
 
 
 typedef struct {
@@ -167,5 +200,7 @@ typedef struct {
 //int max_bitrate_descriptor_free(descriptor_t *desc);
 //descriptor_t* max_bitrate_descriptor_read(descriptor_t *desc, bs_t *b);
 //int max_bitrate_descriptor_print(const descriptor_t *desc, int level, char *str, size_t str_len);
+
+
 
 #endif

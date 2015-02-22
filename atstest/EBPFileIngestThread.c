@@ -34,6 +34,8 @@
 #include "EBPFileIngestThread.h"
 #include "EBPThreadLogging.h"
 #include "ATSTestDefines.h"
+#include "ATSTestReport.h"
+
 
 void *EBPFileIngestThreadProc(void *threadParams)
 {
@@ -49,6 +51,8 @@ void *EBPFileIngestThreadProc(void *threadParams)
    {
       LOG_ERROR_ARGS("EBPFileIngestThread %d: FAIL: Cannot open file %s - %s", 
          ebpFileIngestThreadParams->ebpIngestThreadParams->threadNum, ebpFileIngestThreadParams->filePath, strerror(errno));
+      reportAddErrorLogArgs("EBPFileIngestThread %d: FAIL: Cannot open file %s - %s", 
+         ebpFileIngestThreadParams->ebpIngestThreadParams->threadNum, ebpFileIngestThreadParams->filePath, strerror(errno));
 
       ebpFileIngestThreadParams->ebpIngestThreadParams->ingestPassFail = 0;
       cleanupAndExit(ebpFileIngestThreadParams);
@@ -59,6 +63,8 @@ void *EBPFileIngestThreadProc(void *threadParams)
    if (NULL == (m2s = mpeg2ts_stream_new()))
    {
       LOG_ERROR_ARGS("EBPFileIngestThread %d: FAIL: Error creating MPEG-2 STREAM object",
+         ebpFileIngestThreadParams->ebpIngestThreadParams->threadNum);
+      reportAddErrorLogArgs("EBPFileIngestThread %d: FAIL: Error creating MPEG-2 STREAM object",
          ebpFileIngestThreadParams->ebpIngestThreadParams->threadNum);
       ebpFileIngestThreadParams->ebpIngestThreadParams->ingestPassFail = 0;
       cleanupAndExit(ebpFileIngestThreadParams);
@@ -73,6 +79,8 @@ void *EBPFileIngestThreadProc(void *threadParams)
    if (!register_descriptor(desc))
    {
       LOG_ERROR_ARGS("EBPFileIngestThread %d: FAIL: Could not register EBP descriptor parser",
+         ebpFileIngestThreadParams->ebpIngestThreadParams->threadNum);
+      reportAddErrorLogArgs("EBPFileIngestThread %d: FAIL: Could not register EBP descriptor parser",
          ebpFileIngestThreadParams->ebpIngestThreadParams->threadNum);
       ebpFileIngestThreadParams->ebpIngestThreadParams->ingestPassFail = 0;
 
@@ -124,6 +132,9 @@ void cleanupAndExit(ebp_file_ingest_thread_params_t *ebpFileIngestThreadParams)
       if (returnCode != 0)
       {
          LOG_ERROR_ARGS ("EBPFileIngestThread %d: FATAL error %d calling fifo_push on fifo %d (PID %d) during cleanup", 
+            ebpFileIngestThreadParams->ebpIngestThreadParams->threadNum, returnCode, 
+            streamInfos[i]->fifo->id, streamInfos[i]->PID);
+         reportAddErrorLogArgs ("EBPFileIngestThread %d: FATAL error %d calling fifo_push on fifo %d (PID %d) during cleanup", 
             ebpFileIngestThreadParams->ebpIngestThreadParams->threadNum, returnCode, 
             streamInfos[i]->fifo->id, streamInfos[i]->PID);
 

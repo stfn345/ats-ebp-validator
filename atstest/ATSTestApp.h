@@ -77,8 +77,8 @@ int stopSocketReceiveThreads (int numIngestStreams, pthread_t **socketReceiveThr
 int waitForSocketReceiveThreadsToExit(int numIngestStreams,
    pthread_t **socketReceiveThreads, pthread_attr_t *threadAttr);
 
-int waitForThreadsToExit(int numFiles, int totalNumStreams,
-   pthread_t **fileIngestThreads, pthread_t **analysisThreads, pthread_attr_t *threadAttr);
+int waitForThreadsToExit(int numIngests, int totalNumStreams,
+   pthread_t **ingestThreads, pthread_t **analysisThreads, pthread_attr_t *threadAttr);
 void analyzeResults(int numIngests, int numStreams, ebp_stream_info_t **streamInfoArray, char **ingestNames,
    int *filePassFails);
 

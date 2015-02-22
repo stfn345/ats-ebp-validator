@@ -30,7 +30,6 @@ typedef struct
 
 } ebp_stream_ingest_thread_params_t;
 
-
 void streamIngestCleanup(ebp_stream_ingest_thread_params_t *ebpStreamIngestThreadParams);
 void *EBPStreamIngestThreadProc(void *threadParams);
 

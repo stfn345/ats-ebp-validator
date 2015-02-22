@@ -46,6 +46,9 @@
 #include "libts_common.h"
 #include "log.h"
 
+#include "ATSTestReport.h"
+
+
 pes_packet_t* pes_new() 
 { 
    pes_packet_t *pes = (pes_packet_t *)calloc(1, sizeof(pes_packet_t)); 
@@ -105,6 +108,8 @@ int pes_read_vec(pes_packet_t *pes, const buf_t *vec, int buf_count)
       pes->status = PES_ERROR_NOT_ENOUGH_DATA; 
       LOG_ERROR_ARGS("PES packet header promises %u bytes, only %ld found in buffer", 
                      pes->header.PES_packet_length + 6, pes->buf_len); 
+      reportAddErrorLogArgs("PES packet header promises %u bytes, only %ld found in buffer", 
+                     pes->header.PES_packet_length + 6, pes->buf_len); 
    }
    
    return bs_pos(&b);
@@ -146,6 +151,8 @@ int pes_read_buf(pes_packet_t* pes, const uint8_t* buf, size_t len)
       pes->status = PES_ERROR_NOT_ENOUGH_DATA; 
       LOG_ERROR_ARGS("PES packet header promises %u bytes, only %ld found in buffer", 
                      pes->header.PES_packet_length + 6, pes->buf_len); 
+      reportAddErrorLogArgs("PES packet header promises %u bytes, only %ld found in buffer", 
+                     pes->header.PES_packet_length + 6, pes->buf_len); 
    }
    
    return bs_pos(&b);
@@ -158,6 +165,7 @@ int pes_read_header(pes_header_t *ph, bs_t *b)
    if (bs_bytes_left(b) < 6) 
    {
       LOG_ERROR_ARGS("%d bytes in PES packet header, at least 6 bytes expected", bs_bytes_left(b)); 
+      reportAddErrorLogArgs("%d bytes in PES packet header, at least 6 bytes expected", bs_bytes_left(b)); 
       return PES_ERROR_NOT_ENOUGH_DATA;
    }
    
@@ -168,6 +176,8 @@ int pes_read_header(pes_header_t *ph, bs_t *b)
       int actually_read = bs_pos(b) - PES_packet_start; 
       b->p -= actually_read; // undo the read
       LOG_ERROR_ARGS("PES packet starts with 0x%06X instead of expected start code 0x%06X, skipping it", 
+                    pes_packet_start_code, PES_PACKET_START_CODE_PREFIX); 
+      reportAddErrorLogArgs("PES packet starts with 0x%06X instead of expected start code 0x%06X, skipping it", 
                     pes_packet_start_code, PES_PACKET_START_CODE_PREFIX); 
       
       return PES_ERROR_WRONG_START_CODE; // bail out! something is fishy!
@@ -182,6 +192,7 @@ int pes_read_header(pes_header_t *ph, bs_t *b)
       if (bs_bytes_left(b) < 3) 
       {
          LOG_ERROR("Not enough data to complete reading PES header"); 
+         reportAddErrorLog("Not enough data to complete reading PES header"); 
          return PES_ERROR_NOT_ENOUGH_DATA; 
       }
       // byte 6
@@ -207,6 +218,7 @@ int pes_read_header(pes_header_t *ph, bs_t *b)
       if (bs_bytes_left(b) < ph->PES_header_data_length) 
       {
          LOG_ERROR("Not enough data to complete reading PES header"); 
+         reportAddErrorLog("Not enough data to complete reading PES header"); 
          return PES_ERROR_NOT_ENOUGH_DATA; 
       }
 

@@ -22,6 +22,8 @@
 #include <pthread.h>
 #include <unistd.h>
 
+#include "ATSTestReport.h"
+
 #include <mpeg2ts_demux.h>
 #include <libts_common.h>
 #include <tpes.h>
@@ -49,6 +51,8 @@ void *EBPStreamIngestThreadProc(void *threadParams)
    {
       LOG_ERROR_ARGS("EBPStreamIngestThread %d: FAIL: Error creating MPEG-2 STREAM object",
          ebpStreamIngestThreadParams->ebpIngestThreadParams->threadNum);
+      reportAddErrorLogArgs("EBPStreamIngestThread %d: FAIL: Error creating MPEG-2 STREAM object",
+         ebpStreamIngestThreadParams->ebpIngestThreadParams->threadNum);
       ebpStreamIngestThreadParams->ebpIngestThreadParams->ingestPassFail = 0;
       streamIngestCleanup(ebpStreamIngestThreadParams);
    }
@@ -62,6 +66,8 @@ void *EBPStreamIngestThreadProc(void *threadParams)
    if (!register_descriptor(desc))
    {
       LOG_ERROR_ARGS("EBPStreamIngestThread %d: FAIL: Could not register EBP descriptor parser",
+         ebpStreamIngestThreadParams->ebpIngestThreadParams->threadNum);
+      reportAddErrorLogArgs("EBPStreamIngestThread %d: FAIL: Could not register EBP descriptor parser",
          ebpStreamIngestThreadParams->ebpIngestThreadParams->threadNum);
       ebpStreamIngestThreadParams->ebpIngestThreadParams->ingestPassFail = 0;
 
@@ -79,24 +85,29 @@ void *EBPStreamIngestThreadProc(void *threadParams)
 
    int total_packets = 0;
 
-   while ((num_bytes = cb_read (ebpStreamIngestThreadParams->cb, ts_buf, ts_buf_sz)) > 0)
+   while (((num_bytes = cb_read (ebpStreamIngestThreadParams->cb, ts_buf, ts_buf_sz)) > 0))
    {
       if (num_bytes % TS_SIZE)
       {
          LOG_ERROR_ARGS ("EBPStreamIngestThread %d: FAIL: Bytes read not a multiple of TS packets: %d", 
             ebpStreamIngestThreadParams->ebpIngestThreadParams->threadNum, num_bytes);
+         reportAddErrorLogArgs ("EBPStreamIngestThread %d: FAIL: Bytes read not a multiple of TS packets: %d", 
+            ebpStreamIngestThreadParams->ebpIngestThreadParams->threadNum, num_bytes);
       }
       num_packets = num_bytes / TS_SIZE;
 
-      total_packets += num_packets;
-      LOG_INFO_ARGS ("total_packets = %d, num_packets = %d", total_packets, num_packets);
+ //     LOG_INFO_ARGS ("buf: 0x%x, 0x%x, 0x%x, 0x%x", ts_buf[0], ts_buf[1], ts_buf[2], ts_buf[3]);
       for (int i = 0; i < num_packets; i++)
       {
+         total_packets++;
+//         LOG_INFO_ARGS ("packet #%d, total_packets = %d", i, total_packets);
          ts_packet_t *ts = ts_new();
          ts_read(ts, ts_buf + i * TS_SIZE, TS_SIZE);
          int returnCode = mpeg2ts_stream_read_ts_packet(m2s, ts);
          // GORP: error checking here: need to augment mpeg2ts_stream_read_ts_packet's error checking
       }
+
+      LOG_INFO_ARGS ("total_packets = %d", total_packets);
    }
 
    mpeg2ts_stream_free(m2s);
@@ -120,6 +131,9 @@ void streamIngestCleanup(ebp_stream_ingest_thread_params_t *ebpStreamIngestThrea
       if (returnCode != 0)
       {
          LOG_ERROR_ARGS ("EBPStreamIngestThread %d: FATAL error %d calling fifo_push on fifo %d (PID %d) during cleanup", 
+            ebpStreamIngestThreadParams->ebpIngestThreadParams->threadNum, returnCode, 
+            streamInfos[i]->fifo->id, streamInfos[i]->PID);
+         reportAddErrorLogArgs ("EBPStreamIngestThread %d: FATAL error %d calling fifo_push on fifo %d (PID %d) during cleanup", 
             ebpStreamIngestThreadParams->ebpIngestThreadParams->threadNum, returnCode, 
             streamInfos[i]->fifo->id, streamInfos[i]->PID);
 

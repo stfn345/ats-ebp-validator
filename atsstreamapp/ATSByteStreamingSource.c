@@ -28,21 +28,24 @@
 
 #include "log.h"
 
-#define TS_SIZE 17
-//#define TS_SIZE 188
+#define TS_SIZE 188
+
+unsigned int g_exit = 0;
 
 static struct option long_options[] = { 
-    { "help",  no_argument,        NULL, 'h' }, 
-    { 0,  0,        0, 0 }
+    { "help",  no_argument, NULL, 'h' }, 
+//    { "packetsPerSecond",  required_argument, NULL, 'p' }, 
+    { 0,  0, 0, 0 }
 }; 
 
 static char options[] = 
-"\t-h, --help\n"; 
+"\t-h, --help\n";
+//"\t-p, --packetsPerSecond\n"; 
 
 static void usage() 
 { 
-    fprintf(stderr, "\nATSTestApp\n"); 
-    fprintf(stderr, "\nUsage: \nnATSTestApp [options] <input file 1> <input file 2> ... <input file N>\n\nOptions:\n%s\n", options);
+    fprintf(stderr, "\nATSStreamApp\n"); 
+    fprintf(stderr, "\nUsage: \nATSStreamApp [options] <inputfile1>,<destinationIP1>:<destinationPort1>,<packetsPerSec1> <inputfile2>,<destinationIP2>:<destinationPort2>,<packetsPerSec2> ... <inputfileN>,<destinationIPN>:<destinationPortN>,<packetsPerSecN>\n\nOptions:\n%s\n", options);
 }
 
 typedef struct
@@ -51,23 +54,29 @@ typedef struct
    char *filePath;
    unsigned long destIPAddr;
    unsigned short destPort;
+   int packetsPerSecond;
 
 } ebp_file_stream_thread_params_t;
 
-int parseInputArg (char *inputArg, char **ppFilePath, unsigned long *pDestIP, unsigned short *pDestPort)
+int parseInputArg (char *inputArg, char **ppFilePath, unsigned long *pDestIP, unsigned short *pDestPort,
+                   int *pPacketsPerSec)
 {
    // input args are of the form "filepath,IPAddr:port"
 
+   printf ("Inside parseInputArg\n");
+
    *ppFilePath = strtok (inputArg, ",");
    char *temp = strtok (NULL, ",");
+   char *packetsPerSecondString = strtok (NULL, ",");
+   *pPacketsPerSec = atoi(packetsPerSecondString);
 
    char *ipString = strtok (temp, ":");
-   char *portString = strtok (NULL, ":");
+   char *portString = strtok (NULL, "");
 
-
-//   printf ("filePath = %s\n", *ppFilePath);
-//   printf ("ipString = %s\n", ipString);
-//   printf ("portString = %s\n", portString);
+   printf ("filePath = %s\n", *ppFilePath);
+   printf ("ipString = %s\n", ipString);
+   printf ("portString = %s\n", portString);
+   printf ("packetsPerSecondString = %s\n", packetsPerSecondString);
 
    char *tempStr1 = strtok (ipString, ".");
    char *tempStr2 = strtok (NULL, ".");
@@ -174,13 +183,17 @@ void *EBPFileStreamThreadProc(void *threadParams)
 
    // read file and send out UDP packets -- be sure that each packet has
    // integral number of transport stream packets
+   int i=0;
    while ((num_packets = fread(buf, TS_SIZE, num_packets, infile)) > 0)
    {
       total_packets += num_packets;
-      LOG_INFO_ARGS ("sending bytes: num_packets = %d", num_packets);
 
-      // GORP: do we need throttling here?  
-      // GORP: its UDP -- how do we tell if we lose a packet on the receiving end??
+ /*     if (i%1000 == 0)
+      {
+         LOG_INFO_ARGS ("total_packets = %d", total_packets);
+      }
+      */
+      i++;
 
       returnCode = sendBytes (buf, num_packets * TS_SIZE, mySocket, &destAddr);
       if (returnCode < 0)
@@ -188,8 +201,20 @@ void *EBPFileStreamThreadProc(void *threadParams)
          LOG_ERROR_ARGS("EBPFileStreamThread %d: Error sending bytes: %s", 
             ebpFileStreamThreadParams->threadNum, strerror(errno));
       }
+
+      if (ebpFileStreamThreadParams->packetsPerSecond != 0 && total_packets%ebpFileStreamThreadParams->packetsPerSecond == 0)
+      {
+         LOG_INFO_ARGS ("total_packets = %d, packetsPerSecond = %d...sleeping...", total_packets, ebpFileStreamThreadParams->packetsPerSecond);
+         sleep (1);
+      }
+
+      if (g_exit)
+      {
+         break;
+      }
    }
 
+   LOG_INFO_ARGS ("DONE: total_packets = %d", total_packets);
    close (mySocket);
 
    return NULL;
@@ -202,13 +227,14 @@ static int startThreads(int numFiles, char **inputArgs, pthread_t ***fileStreamT
    char *pFilePath;
    unsigned long destIP;
    unsigned short destPort;
+   int packetsPerSecond;
 
    int returnCode = 0;
 
    // one worker thread per file
    // num worker thread = numFiles
 
-   // filenames are of the form "filepath,IPAddr:port"
+   // filenames are of the form "filepath,IPAddr:port,packetsPerSec"
 
    pthread_attr_init(threadAttr);
    pthread_attr_setdetachstate(threadAttr, PTHREAD_CREATE_JOINABLE);
@@ -217,7 +243,7 @@ static int startThreads(int numFiles, char **inputArgs, pthread_t ***fileStreamT
    *fileStreamThreads = (pthread_t **) calloc (numFiles, sizeof(pthread_t*));
    for (int threadIndex = 0; threadIndex < numFiles; threadIndex++)
    {
-      returnCode = parseInputArg (inputArgs[threadIndex], &pFilePath, &destIP, &destPort);
+      returnCode = parseInputArg (inputArgs[threadIndex], &pFilePath, &destIP, &destPort, &packetsPerSecond);
       if (returnCode < 0)
       {
          // GORP: fatal error here
@@ -229,6 +255,7 @@ static int startThreads(int numFiles, char **inputArgs, pthread_t ***fileStreamT
       ebpFileStreamThreadParams->filePath = pFilePath;
       ebpFileStreamThreadParams->destIPAddr = destIP;
       ebpFileStreamThreadParams->destPort = destPort;
+      ebpFileStreamThreadParams->packetsPerSecond = packetsPerSecond;
 
       (*fileStreamThreads)[threadIndex] = (pthread_t *)malloc (sizeof (pthread_t));
       pthread_t *fileStreamThread = (*fileStreamThreads)[threadIndex];
@@ -314,7 +341,12 @@ int main(int argc, char** argv)
       exit (-1);
    }
 
+   printf ("Press return to exit...\n\n");
+   int myChar = getchar();
+   printf ("Exiting...\n");
+   g_exit = 1;
 
+  
    returnCode = waitForThreadsToExit(numFiles, fileStreamThreads, &threadAttr);
    if (returnCode != 0)
    {

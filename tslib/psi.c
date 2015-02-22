@@ -35,6 +35,9 @@
 #include "crc32m.h"
 #include "vqarray.h"
 
+#include "ATSTestReport.h"
+
+
 typedef struct {
    int type; 
    char name[0x100];
@@ -133,6 +136,8 @@ int program_association_section_read(program_association_section_t *pas, uint8_t
    {
       LOG_ERROR_ARGS("Table ID in PAT is 0x%02X instead of expected 0x%02X", 
                      pas->table_id, program_association_section); 
+      reportAddErrorLogArgs("Table ID in PAT is 0x%02X instead of expected 0x%02X", 
+                     pas->table_id, program_association_section); 
       SAFE_REPORT_TS_ERR(-30); 
       return 0;
    }
@@ -143,6 +148,7 @@ int program_association_section_read(program_association_section_t *pas, uint8_t
    if (!pas->section_syntax_indicator) 
    {
       LOG_ERROR("section_syntax_indicator not set in PAT"); 
+      reportAddErrorLog("section_syntax_indicator not set in PAT"); 
       SAFE_REPORT_TS_ERR(-31); 
       return 0;
    }
@@ -151,6 +157,8 @@ int program_association_section_read(program_association_section_t *pas, uint8_t
    if (pas->section_length > MAX_SECTION_LEN) 
    {
       LOG_ERROR_ARGS("PAT section length is 0x%02X, larger than maximum allowed 0x%02X", 
+                     pas->section_length, MAX_SECTION_LEN); 
+      reportAddErrorLogArgs("PAT section length is 0x%02X, larger than maximum allowed 0x%02X", 
                      pas->section_length, MAX_SECTION_LEN); 
       SAFE_REPORT_TS_ERR(-32); 
       return 0;
@@ -221,6 +229,7 @@ int program_association_section_read(program_association_section_t *pas, uint8_t
    if (pas_crc != pas->CRC_32) 
    {
       LOG_ERROR_ARGS("PAT CRC_32 specified as 0x%08X, but calculated as 0x%08X", pas->CRC_32, pas_crc); 
+      reportAddErrorLogArgs("PAT CRC_32 specified as 0x%08X, but calculated as 0x%08X", pas->CRC_32, pas_crc); 
       SAFE_REPORT_TS_ERR(-33); 
       return 0;
    } 
@@ -288,15 +297,20 @@ int es_info_read(elementary_stream_info_t *es, bs_t *b)
    es->ES_info_length = bs_read_u(b, 12); 
 
    
+//   printf ("es_info_read: PID = %d, streamType = %d.  Calling read_descriptor_loop\n", 
+//      es->elementary_PID, es->stream_type);
+   
    read_descriptor_loop(es->descriptors, b, es->ES_info_length); 
    if (es->ES_info_length > MAX_ES_INFO_LEN) 
    {
       LOG_ERROR_ARGS("ES info length is 0x%02X, larger than maximum allowed 0x%02X", 
                      es->ES_info_length, MAX_ES_INFO_LEN); 
+      reportAddErrorLogArgs("ES info length is 0x%02X, larger than maximum allowed 0x%02X", 
+                     es->ES_info_length, MAX_ES_INFO_LEN); 
       SAFE_REPORT_TS_ERR(-60); 
       return 0;
    }
-   
+
    return bs_pos(b) - es_info_start;
 }
 
@@ -364,6 +378,7 @@ int program_map_section_read(program_map_section_t *pms, uint8_t *buf, size_t bu
       SAFE_REPORT_TS_ERR(-1); 
       return 0;
    }
+//   printf ("program_map_section_read\n");
    
    bs_t *b = bs_new(buf, buf_size); 
    
@@ -371,6 +386,7 @@ int program_map_section_read(program_map_section_t *pms, uint8_t *buf, size_t bu
    if (pms->table_id != TS_program_map_section) 
    {
       LOG_ERROR_ARGS("Table ID in PMT is 0x%02X instead of expected 0x%02X", pms->table_id, TS_program_map_section); 
+      reportAddErrorLogArgs("Table ID in PMT is 0x%02X instead of expected 0x%02X", pms->table_id, TS_program_map_section); 
       SAFE_REPORT_TS_ERR(-40); 
       return 0;
    }
@@ -379,6 +395,7 @@ int program_map_section_read(program_map_section_t *pms, uint8_t *buf, size_t bu
    if (!pms->section_syntax_indicator) 
    {
       LOG_ERROR("section_syntax_indicator not set in PMT"); 
+      reportAddErrorLog("section_syntax_indicator not set in PMT"); 
       SAFE_REPORT_TS_ERR(-41); 
       return 0;
    }
@@ -388,6 +405,8 @@ int program_map_section_read(program_map_section_t *pms, uint8_t *buf, size_t bu
    if (pms->section_length > MAX_SECTION_LEN) 
    {
       LOG_ERROR_ARGS("PMT section length is 0x%02X, larger than maximum allowed 0x%02X", 
+                     pms->section_length, MAX_SECTION_LEN); 
+      reportAddErrorLogArgs("PMT section length is 0x%02X, larger than maximum allowed 0x%02X", 
                      pms->section_length, MAX_SECTION_LEN); 
       SAFE_REPORT_TS_ERR(-42); 
       return 0;
@@ -410,6 +429,7 @@ int program_map_section_read(program_map_section_t *pms, uint8_t *buf, size_t bu
    if (pms->section_number != 0 || pms->last_section_number != 0) 
    {
       LOG_ERROR("Multi-section PMT is not allowed/n"); 
+      reportAddErrorLog("Multi-section PMT is not allowed/n"); 
       SAFE_REPORT_TS_ERR(-43); 
       return 0;
    }
@@ -419,9 +439,11 @@ int program_map_section_read(program_map_section_t *pms, uint8_t *buf, size_t bu
    if (pms->PCR_PID < GENERAL_PURPOSE_PID_MIN || pms->PCR_PID > GENERAL_PURPOSE_PID_MAX) 
    {
       LOG_ERROR_ARGS("PCR PID has invalid value 0x%02X", pms->PCR_PID); 
+      reportAddErrorLogArgs("PCR PID has invalid value 0x%02X", pms->PCR_PID); 
       SAFE_REPORT_TS_ERR(-44); 
       return 0;
    }
+//   printf ("PCR PID = %d\n", pms->PCR_PID);
    bs_skip_u(b, 4); 
    
    pms->program_info_length = bs_read_u(b, 12); 
@@ -429,15 +451,20 @@ int program_map_section_read(program_map_section_t *pms, uint8_t *buf, size_t bu
    {
       LOG_ERROR_ARGS("PMT program info length is 0x%02X, larger than maximum allowed 0x%02X", 
                      pms->program_info_length, MAX_PROGRAM_INFO_LEN); 
+      reportAddErrorLogArgs("PMT program info length is 0x%02X, larger than maximum allowed 0x%02X", 
+                     pms->program_info_length, MAX_PROGRAM_INFO_LEN); 
       SAFE_REPORT_TS_ERR(-45); 
       return 0;
    }
    
+//   printf ("Calling read_descriptor_loop\n");
+
    read_descriptor_loop(pms->descriptors, b, pms->program_info_length); 
    
    while (pms->section_length - (bs_pos(b) - section_start) > 4) // account for CRC
    {
-      elementary_stream_info_t *es = es_info_new(); 
+      elementary_stream_info_t *es = es_info_new();
+//      printf ("Calling es_info_read\n");
       es_info_read(es, b); 
       vqarray_add(pms->es_info, es);
    }
@@ -451,6 +478,7 @@ int program_map_section_read(program_map_section_t *pms, uint8_t *buf, size_t bu
    if (pas_crc != pms->CRC_32) 
    {
       LOG_ERROR_ARGS("PMT CRC_32 specified as 0x%08X, but calculated as 0x%08X", pms->CRC_32, pas_crc); 
+      reportAddErrorLogArgs("PMT CRC_32 specified as 0x%08X, but calculated as 0x%08X", pms->CRC_32, pas_crc); 
       SAFE_REPORT_TS_ERR(-46); 
       return 0;
    } 
@@ -530,6 +558,8 @@ int conditional_access_section_read(conditional_access_section_t *cas, uint8_t *
    {
       LOG_ERROR_ARGS("Table ID in CAT is 0x%02X instead of expected 0x%02X", 
                      cas->table_id, conditional_access_section); 
+      reportAddErrorLogArgs("Table ID in CAT is 0x%02X instead of expected 0x%02X", 
+                     cas->table_id, conditional_access_section); 
       SAFE_REPORT_TS_ERR(-30); 
       return 0;
    }
@@ -540,6 +570,7 @@ int conditional_access_section_read(conditional_access_section_t *cas, uint8_t *
    if (!cas->section_syntax_indicator) 
    {
       LOG_ERROR("section_syntax_indicator not set in CAT"); 
+      reportAddErrorLog("section_syntax_indicator not set in CAT"); 
       SAFE_REPORT_TS_ERR(-31); 
       return 0;
    }
@@ -548,6 +579,8 @@ int conditional_access_section_read(conditional_access_section_t *cas, uint8_t *
    if (cas->section_length > 1021) // max CAT length 
    {
       LOG_ERROR_ARGS("CAT section length is 0x%02X, larger than maximum allowed 0x%02X", 
+                     cas->section_length, MAX_SECTION_LEN); 
+      reportAddErrorLogArgs("CAT section length is 0x%02X, larger than maximum allowed 0x%02X", 
                      cas->section_length, MAX_SECTION_LEN); 
       SAFE_REPORT_TS_ERR(-32); 
       return 0;
@@ -587,6 +620,7 @@ int conditional_access_section_read(conditional_access_section_t *cas, uint8_t *
    if (cas_crc != cas->CRC_32) 
    {
       LOG_ERROR_ARGS("CAT CRC_32 specified as 0x%08X, but calculated as 0x%08X", cas->CRC_32, cas_crc); 
+      reportAddErrorLogArgs("CAT CRC_32 specified as 0x%08X, but calculated as 0x%08X", cas->CRC_32, cas_crc); 
       SAFE_REPORT_TS_ERR(-33); 
       return 0;
    } 

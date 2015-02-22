@@ -30,6 +30,8 @@
 
 #include "EBPSegmentAnalysisThread.h"
 #include "EBPThreadLogging.h"
+#include "ATSTestReport.h"
+
 
 void *EBPSegmentAnalysisThreadProc(void *threadParams)
 {
@@ -48,6 +50,8 @@ void *EBPSegmentAnalysisThreadProc(void *threadParams)
    {
       LOG_ERROR_ARGS("EBPSegmentAnalysisThread %d: Fatal error syncing streams: exiting", 
          ebpSegmentAnalysisThreadParams->threadID);
+      reportAddErrorLogArgs("EBPSegmentAnalysisThread %d: Fatal error syncing streams: exiting", 
+         ebpSegmentAnalysisThreadParams->threadID);
       exit (-1);
    }
 
@@ -58,6 +62,8 @@ void *EBPSegmentAnalysisThreadProc(void *threadParams)
 
       int nextPTSSet = 0;
       int64_t nextPTS = 0;
+      uint8_t nextPartitionId;
+
 
       uint32_t acquisitionTimeSecs = 0;
       float acquisitionTimeFracSec = 0.0;
@@ -81,6 +87,8 @@ void *EBPSegmentAnalysisThreadProc(void *threadParams)
          {
             LOG_ERROR_ARGS ("EBPSegmentAnalysisThread %d: FATAL error %d calling fifo_pop for fifo %d", ebpSegmentAnalysisThreadParams->threadID,
                returnCode, i);
+            reportAddErrorLogArgs ("EBPSegmentAnalysisThread %d: FATAL error %d calling fifo_pop for fifo %d", ebpSegmentAnalysisThreadParams->threadID,
+               returnCode, i);
 
             // fatal error here
             streamInfo->streamPassFail = 0;
@@ -101,12 +109,13 @@ void *EBPSegmentAnalysisThreadProc(void *threadParams)
             else
             {
                ebp_segment_info_t *ebpSegmentInfo = (ebp_segment_info_t *)element;
-               LOG_INFO_ARGS ("EBPSegmentAnalysisThread %d: POPPED PTS = %"PRId64" from fifo %d (PID %d), descriptor = %x", 
-                  ebpSegmentAnalysisThreadParams->threadID, ebpSegmentInfo->PTS, i, streamInfo->PID, 
-                  (unsigned int)(ebpSegmentInfo->latestEBPDescriptor));
+               LOG_INFO_ARGS ("EBPSegmentAnalysisThread %d: POPPED PTS = %"PRId64", partitionId = %d from fifo %d (PID %d)", 
+                  ebpSegmentAnalysisThreadParams->threadID, ebpSegmentInfo->PTS, ebpSegmentInfo->partitionId, i, streamInfo->PID);
                   
                if (!nextPTSSet)
                {
+                  // GORP: add partition ID here
+                  nextPartitionId = ebpSegmentInfo->partitionId;
                   nextPTS = ebpSegmentInfo->PTS;
                   nextPTSSet = 1;
                }
@@ -116,6 +125,16 @@ void *EBPSegmentAnalysisThreadProc(void *threadParams)
                   {
                      LOG_ERROR_ARGS ("EBPSegmentAnalysisThread %d: FAIL: PTS MISMATCH for fifo %d (PID %d). Expected %"PRId64", Actual %"PRId64"",
                         ebpSegmentAnalysisThreadParams->threadID, i, streamInfo->PID, nextPTS, ebpSegmentInfo->PTS);
+                     reportAddErrorLogArgs ("EBPSegmentAnalysisThread %d: FAIL: PTS MISMATCH for fifo %d (PID %d). Expected %"PRId64", Actual %"PRId64"",
+                        ebpSegmentAnalysisThreadParams->threadID, i, streamInfo->PID, nextPTS, ebpSegmentInfo->PTS);
+                     streamInfo->streamPassFail = 0;
+                  }
+                  if (ebpSegmentInfo->partitionId != nextPartitionId)
+                  {
+                     LOG_ERROR_ARGS ("EBPSegmentAnalysisThread %d: FAIL: PartitionId MISMATCH for fifo %d (PID %d). Expected %d, Actual %d",
+                        ebpSegmentAnalysisThreadParams->threadID, i, streamInfo->PID, nextPartitionId, ebpSegmentInfo->partitionId);
+                     reportAddErrorLogArgs ("EBPSegmentAnalysisThread %d: FAIL: PartitionId MISMATCH for fifo %d (PID %d). Expected %d, Actual %d",
+                        ebpSegmentAnalysisThreadParams->threadID, i, streamInfo->PID, nextPartitionId, ebpSegmentInfo->partitionId);
                      streamInfo->streamPassFail = 0;
                   }
                }
@@ -142,6 +161,8 @@ void *EBPSegmentAnalysisThreadProc(void *threadParams)
                   {
                      LOG_ERROR_ARGS ("EBPSegmentAnalysisThread %d: FAIL: presence of acquisition time mismatch for fifo %d (PID %d).",
                         ebpSegmentAnalysisThreadParams->threadID, i, streamInfo->PID);
+                     reportAddErrorLogArgs ("EBPSegmentAnalysisThread %d: FAIL: presence of acquisition time mismatch for fifo %d (PID %d).",
+                        ebpSegmentAnalysisThreadParams->threadID, i, streamInfo->PID);
                      streamInfo->streamPassFail = 0;
                   }
                   else if (acquisitionTimePresentTemp)
@@ -157,11 +178,15 @@ void *EBPSegmentAnalysisThreadProc(void *threadParams)
                                         ebpSegmentAnalysisThreadParams->threadID, i, streamInfo->PID, 
                                         acquisitionTimeSecs, acquisitionTimeFracSec,
                                         acquisitionTimeSecsTemp, acquisitionTimeFracSecTemp);
+                        reportAddErrorLogArgs ("EBPSegmentAnalysisThread %d: FAIL: Acquisition time MISMATCH for fifo %d (PID %d). Expected %d,%f, Actual %d,%f", 
+                                        ebpSegmentAnalysisThreadParams->threadID, i, streamInfo->PID, 
+                                        acquisitionTimeSecs, acquisitionTimeFracSec,
+                                        acquisitionTimeSecsTemp, acquisitionTimeFracSecTemp);
                         streamInfo->streamPassFail = 0;
                      }
                      else
                      {
-                        LOG_INFO_ARGS ("EBPSegmentAnalysisThread %d: Acquisition time for fifo %d (PID %d): %d,%f", 
+                        LOG_DEBUG_ARGS ("EBPSegmentAnalysisThread %d: Acquisition time for fifo %d (PID %d): %d,%f", 
                                         ebpSegmentAnalysisThreadParams->threadID, i, streamInfo->PID, 
                                         acquisitionTimeSecs, acquisitionTimeFracSec);
                      }
@@ -177,6 +202,8 @@ void *EBPSegmentAnalysisThreadProc(void *threadParams)
                if (ebpSegmentInfo->SAPType == SAP_STREAM_TYPE_ERROR)
                {
                   LOG_ERROR_ARGS ("EBPSegmentAnalysisThread %d: SAP_STREAM_TYPE_ERROR for fifo %d (PID %d).", 
+                     ebpSegmentAnalysisThreadParams->threadID, i, streamInfo->PID);
+                  reportAddErrorLogArgs ("EBPSegmentAnalysisThread %d: SAP_STREAM_TYPE_ERROR for fifo %d (PID %d).", 
                      ebpSegmentAnalysisThreadParams->threadID, i, streamInfo->PID);
                   streamInfo->streamPassFail = 0;
                }
@@ -197,6 +224,9 @@ void *EBPSegmentAnalysisThreadProc(void *threadParams)
                      if (ebpSegmentInfo->EBP->ebp_sap_type != ebpSegmentInfo->SAPType)
                      {
                         LOG_ERROR_ARGS ("EBPSegmentAnalysisThread %d: FAIL: SAP Type MISMATCH for fifo %d (PID %d). Expected %d, Actual %d",
+                                        ebpSegmentAnalysisThreadParams->threadID, i, streamInfo->PID, 
+                                        ebpSegmentInfo->EBP->ebp_sap_type, ebpSegmentInfo->SAPType);
+                        reportAddErrorLogArgs ("EBPSegmentAnalysisThread %d: FAIL: SAP Type MISMATCH for fifo %d (PID %d). Expected %d, Actual %d",
                                         ebpSegmentAnalysisThreadParams->threadID, i, streamInfo->PID, 
                                         ebpSegmentInfo->EBP->ebp_sap_type, ebpSegmentInfo->SAPType);
                         streamInfo->streamPassFail = 0;
@@ -220,6 +250,9 @@ void *EBPSegmentAnalysisThreadProc(void *threadParams)
                               LOG_ERROR_ARGS ("EBPSegmentAnalysisThread %d: FAIL: SAP Type too large for partition %d in fifo %d (PID %d). EBP Descriptor SAP Max %d, Actual %d", 
                                               ebpSegmentAnalysisThreadParams->threadID, ebpSegmentInfo->partitionId, i, streamInfo->PID, 
                                               partition->sap_type_max, ebpSegmentInfo->EBP->ebp_sap_type);
+                              reportAddErrorLogArgs ("EBPSegmentAnalysisThread %d: FAIL: SAP Type too large for partition %d in fifo %d (PID %d). EBP Descriptor SAP Max %d, Actual %d", 
+                                              ebpSegmentAnalysisThreadParams->threadID, ebpSegmentInfo->partitionId, i, streamInfo->PID, 
+                                              partition->sap_type_max, ebpSegmentInfo->EBP->ebp_sap_type);
                               streamInfo->streamPassFail = 0;
                            }
                            else
@@ -239,11 +272,13 @@ void *EBPSegmentAnalysisThreadProc(void *threadParams)
                      {
                         LOG_ERROR_ARGS ("EBPSegmentAnalysisThread %d: FAIL: Expected SAP Type 1 or 2 for fifo %d (PID %d). Actual SAP Type: %d", 
                            ebpSegmentAnalysisThreadParams->threadID, i, streamInfo->PID, ebpSegmentInfo->SAPType);
+                        reportAddErrorLogArgs ("EBPSegmentAnalysisThread %d: FAIL: Expected SAP Type 1 or 2 for fifo %d (PID %d). Actual SAP Type: %d", 
+                           ebpSegmentAnalysisThreadParams->threadID, i, streamInfo->PID, ebpSegmentInfo->SAPType);
                         streamInfo->streamPassFail = 0;
                      }
                      else
                      {
-                        LOG_INFO_ARGS ("EBPSegmentAnalysisThread %d: No ebp_sap_flag set: Expected SAP Type 1 or 2 for fifo %d (PID %d). Actual SAP Type: %d", 
+                        LOG_DEBUG_ARGS ("EBPSegmentAnalysisThread %d: No ebp_sap_flag set: Expected SAP Type 1 or 2 for fifo %d (PID %d). Actual SAP Type: %d", 
                                         ebpSegmentAnalysisThreadParams->threadID, i, streamInfo->PID, 
                                         ebpSegmentInfo->SAPType);
                      }
@@ -288,6 +323,8 @@ int syncIncomingStreams (int threadID, int numFiles, ebp_stream_info_t **streamI
       if (returnCode != 0)
       {
          LOG_ERROR_ARGS ("EBPSegmentAnalysisThread:syncIncomingStreams %d: FATAL error %d calling fifo_peek for fifo %d", threadID,
+            returnCode, i);
+         reportAddErrorLogArgs ("EBPSegmentAnalysisThread:syncIncomingStreams %d: FATAL error %d calling fifo_peek for fifo %d", threadID,
             returnCode, i);
          streamInfo->streamPassFail = 0;
          // fatal error here -- exit
@@ -334,6 +371,8 @@ int syncIncomingStreams (int threadID, int numFiles, ebp_stream_info_t **streamI
          {
             LOG_ERROR_ARGS ("EBPSegmentAnalysisThread:syncIncomingStreams %d: pruning: FATAL error %d calling fifo_peek for fifo %d", threadID,
                returnCode, i);
+            reportAddErrorLogArgs ("EBPSegmentAnalysisThread:syncIncomingStreams %d: pruning: FATAL error %d calling fifo_peek for fifo %d", threadID,
+               returnCode, i);
 
             streamInfo->streamPassFail = 0;
             // fatal error here -- exit
@@ -359,6 +398,8 @@ int syncIncomingStreams (int threadID, int numFiles, ebp_stream_info_t **streamI
                if (returnCode != 0)
                {
                   LOG_ERROR_ARGS ("EBPSegmentAnalysisThread:syncIncomingStreams %d: pruning: FATAL error %d calling fifo_pop for fifo %d", threadID,
+                     returnCode, i);
+                  reportAddErrorLogArgs ("EBPSegmentAnalysisThread:syncIncomingStreams %d: pruning: FATAL error %d calling fifo_pop for fifo %d", threadID,
                      returnCode, i);
                   streamInfo->streamPassFail = 0;
                   // fatal error here -- exit

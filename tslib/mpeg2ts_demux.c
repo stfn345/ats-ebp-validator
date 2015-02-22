@@ -33,6 +33,9 @@
 #include "psi.h"
 #include <descriptors.h>
 
+#include "ATSTestReport.h"
+
+
 pid_info_t* pid_info_new() 
 { 
    pid_info_t *pi = calloc(1, sizeof(pid_info_t)); 
@@ -90,8 +93,7 @@ void mpeg2ts_program_free(mpeg2ts_program_t *m2p)
    
    if (m2p->pmt != NULL) 
    {
-       // GORP: if this is a test with an initialization segment, then dont want to free the pmt
-//GORP     program_map_section_free(m2p->pmt);
+     program_map_section_free(m2p->pmt);
    }
    
    if (m2p->arg_destructor != NULL && m2p->arg != NULL)
@@ -152,6 +154,7 @@ int mpeg2ts_program_register_pid_processor(mpeg2ts_program_t *m2p, uint32_t PID,
    if (esi == NULL) 
    {
       LOG_ERROR_ARGS("Elementary stream with PID 0x%02X not found in PMT of program %d", PID, m2p->program_number); 
+      reportAddErrorLogArgs("Elementary stream with PID 0x%02X not found in PMT of program %d", PID, m2p->program_number); 
       free(pid);
       return 0;
    }
@@ -193,6 +196,7 @@ pid_info_t* mpeg2ts_program_get_pid_info(mpeg2ts_program_t *m2p, uint32_t PID)
    if (m2p->pids == NULL) 
    {
       LOG_ERROR ("mpeg2ts_program_get_pid_info: NULL m2p->pids");
+      reportAddErrorLog ("mpeg2ts_program_get_pid_info: NULL m2p->pids");
       return NULL; 
    }
 
@@ -368,18 +372,9 @@ int mpeg2ts_stream_read_pat(mpeg2ts_stream_t *m2s, ts_packet_t *ts)
    return ret;
 }
 
-int mpeg2ts_stream_read_dash_event_msg(mpeg2ts_stream_t *m2s, ts_packet_t *ts) 
-{ 
-   doDASHEventValidation(ts->payload.bytes, ts->payload.len);
-
-   // GORP: allow >1 packet event
- 
-   ts_free(ts);    
-   return 0;
-}
-
 int mpeg2ts_program_read_pmt(mpeg2ts_program_t *m2p, ts_packet_t *ts) 
 { 
+//   printf ("mpeg2ts_program_read_pmt\n");
    int ret = 0; 
    
    program_map_section_t *new_pms = program_map_section_new(); 
@@ -390,6 +385,7 @@ int mpeg2ts_program_read_pmt(mpeg2ts_program_t *m2p, ts_packet_t *ts)
       return ret;
    }
    
+//   printf ("Calling program_map_section_read\n");
    if (program_map_section_read(new_pms, ts->payload.bytes + 1, ts->payload.len - 1) == 0) 
    {
       program_map_section_free(new_pms); 
@@ -488,8 +484,6 @@ int mpeg2ts_stream_read_ts_packet(mpeg2ts_stream_t *m2s, ts_packet_t *ts)
        return mpeg2ts_stream_read_pat(m2s, ts); 
    if (ts->header.PID == CAT_PID)
        return mpeg2ts_stream_read_cat(m2s, ts); 
-   if (ts->header.PID == DASH_PID)
-       return mpeg2ts_stream_read_dash_event_msg(m2s, ts);
 
 
    if ( ts->header.PID == NULL_PID ) 
@@ -501,6 +495,7 @@ int mpeg2ts_stream_read_ts_packet(mpeg2ts_stream_t *m2s, ts_packet_t *ts)
    if (m2s->pat == NULL) 
    {
       LOG_ERROR_ARGS("PAT missing -- unknown PID 0x%02X", ts->header.PID); 
+      reportAddErrorLogArgs("PAT missing -- unknown PID 0x%02X", ts->header.PID); 
       ts_free(ts);  
       return 0;    
    }

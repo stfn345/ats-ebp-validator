@@ -31,6 +31,7 @@
 #include "EBPSocketReceiveThread.h"
 
 #include "ATSTestApp.h"
+#include "ATSTestReport.h"
 #include "ATSTestDefines.h"
 
 
@@ -64,11 +65,15 @@ static void usage()
 { 
     fprintf(stderr, "\nATSTestApp\n"); 
     fprintf(stderr, "\nUsage: \nnATSTestApp [options] <input file 1> <input file 2> ... <input file N>\n\nOptions:\n%s\n", options);
+    fprintf(stderr, "\nUsage: \nnATSTestApp [options] <ip1>:<port1> <ip2>:<port2> ... <ipN>:<portN> \n\nOptions:\n%s\n", options);
 }
 
-int parseMulticastAddrArg (char *inputArg, unsigned long *pIP, unsigned short *pPort)
+int parseMulticastAddrArg (char *inputArgIn, unsigned long *pIP, unsigned short *pPort)
 {
    // input args are of the form "filepath,IPAddr:port"
+
+   char inputArg[100];
+   strcpy (inputArg, inputArgIn);
 
    char *ipString = strtok (inputArg, ":");
    char *portString = strtok (NULL, ":");
@@ -137,6 +142,7 @@ int modBoundaryInfoArray (ebp_descriptor_t * ebpDescriptor, ebp_t *ebp, ebp_boun
          if (partition->partition_id > 9)
          {
             LOG_ERROR("Main:modBoundaryInfoArray: FAIL: PartitionID > 9 detected %s");
+            reportAddErrorLog("Main:modBoundaryInfoArray: FAIL: PartitionID > 9 detected %s");
             return -1;
          }
 
@@ -169,6 +175,8 @@ int modBoundaryInfoArray (ebp_descriptor_t * ebpDescriptor, ebp_t *ebp, ebp_boun
                if (returnCode != 0)
                {
                   LOG_ERROR_ARGS("Main:modBoundaryInfoArray: FAIL: Cannot find file with video PID %d for implicit EBP for file %d",
+                     boundaryInfoArray[partition->partition_id].implicitPID, currentFileIndex);
+                  reportAddErrorLogArgs("Main:modBoundaryInfoArray: FAIL: Cannot find file with video PID %d for implicit EBP for file %d",
                      boundaryInfoArray[partition->partition_id].implicitPID, currentFileIndex);
                   return -1;
                }
@@ -222,6 +230,8 @@ int modBoundaryInfoArray (ebp_descriptor_t * ebpDescriptor, ebp_t *ebp, ebp_boun
       {
          LOG_ERROR_ARGS("Main:modBoundaryInfoArray: FAIL: video stream has no EBP descriptor and no EBP in stream for file %d",
             currentFileIndex);
+         reportAddErrorLogArgs("Main:modBoundaryInfoArray: FAIL: video stream has no EBP descriptor and no EBP in stream for file %d",
+            currentFileIndex);
          return -1;
       }
       else  if (IS_AUDIO_STREAM((programStreamInfo->stream_types)[currentStreamIndex]))
@@ -252,6 +262,8 @@ int modBoundaryInfoArray (ebp_descriptor_t * ebpDescriptor, ebp_t *ebp, ebp_boun
       {
          LOG_ERROR_ARGS("Main:modBoundaryInfoArray: FAIL: stream is not video or audio for file %d",
             currentFileIndex);
+         reportAddErrorLogArgs("Main:modBoundaryInfoArray: FAIL: stream is not video or audio for file %d",
+            currentFileIndex);
          return -1;
       }
    }
@@ -266,7 +278,6 @@ static int handle_ts_packet(ts_packet_t *ts, elementary_stream_info_t *es_info, 
 
 static int handle_pes_packet(pes_packet_t *pes, elementary_stream_info_t *esi, vqarray_t *ts_queue, void *arg)
 {
-//   printf ("PREREAD: handle_pes_packet\n");
    // Get the first TS packet and check it for EBP
    ts_packet_t *ts = (ts_packet_t*)vqarray_get(ts_queue,0);
    if (ts == NULL)
@@ -278,7 +289,6 @@ static int handle_pes_packet(pes_packet_t *pes, elementary_stream_info_t *esi, v
          
    // Read N seconds of data 
    // if we get an ebp struct in each stream before that, then exit.
-
 
    // get time and exit if greater that limit
    int64_t currentTimeMsecs = (pes->header.PTS * 1000) / 90000;
@@ -347,6 +357,7 @@ static int handle_pes_packet(pes_packet_t *pes, elementary_stream_info_t *esi, v
 
       ebp_free(ebp);
    }
+
 
    pes_free(pes);
    return 1;
@@ -482,6 +493,7 @@ int prereadFiles(int numFiles, char **fileNames, program_stream_info_t *programS
       if ((infile = fopen(fileNames[i], "rb")) == NULL)
       {
          LOG_ERROR_ARGS("Main:prereadFiles: Cannot open file %s - %s", fileNames[i], strerror(errno));
+         reportAddErrorLogArgs("Main:prereadFiles: Cannot open file %s - %s", fileNames[i], strerror(errno));
          return -1;
       }
 
@@ -490,6 +502,7 @@ int prereadFiles(int numFiles, char **fileNames, program_stream_info_t *programS
       if (NULL == (m2s = mpeg2ts_stream_new()))
       {
          LOG_ERROR_ARGS("Main:prereadFiles: Error creating MPEG-2 STREAM object for file %s", fileNames[i]);
+         reportAddErrorLogArgs("Main:prereadFiles: Error creating MPEG-2 STREAM object for file %s", fileNames[i]);
          return -1;
       }
 
@@ -505,6 +518,7 @@ int prereadFiles(int numFiles, char **fileNames, program_stream_info_t *programS
          if (!register_descriptor(desc))
          {
             LOG_ERROR_ARGS("Main:prereadFiles: FAIL: Could not register EBP descriptor parser for file %s", fileNames[i]);
+            reportAddErrorLogArgs("Main:prereadFiles: FAIL: Could not register EBP descriptor parser for file %s", fileNames[i]);
             return -1;
          }
       }
@@ -566,6 +580,7 @@ int prereadIngestStreams(int numIngestStreams, circular_buffer_t **ingestBuffers
       if (NULL == (m2s = mpeg2ts_stream_new()))
       {
          LOG_ERROR_ARGS("Main:prereadIngestStreams: Error creating MPEG-2 STREAM object for ingestStream %d", i);
+         reportAddErrorLogArgs("Main:prereadIngestStreams: Error creating MPEG-2 STREAM object for ingestStream %d", i);
          return -1;
       }
 
@@ -578,6 +593,7 @@ int prereadIngestStreams(int numIngestStreams, circular_buffer_t **ingestBuffers
       if (!register_descriptor(desc))
       {
          LOG_ERROR_ARGS("Main:prereadIngestStreams: FAIL: Could not register EBP descriptor parser for ingest stream %d", i);
+         reportAddErrorLogArgs("Main:prereadIngestStreams: FAIL: Could not register EBP descriptor parser for ingest stream %d", i);
          return -1;
       }
       
@@ -587,11 +603,13 @@ int prereadIngestStreams(int numIngestStreams, circular_buffer_t **ingestBuffers
 
       int num_bytes = 0;
       while (!(g_bPATFound && g_bPMTFound && g_bEBPSearchEnded) && 
-         (num_bytes = cb_read (ingestBuffers[i], ts_buf, ts_buf_sz)) > 0)
+         (num_bytes = cb_peek (ingestBuffers[i], ts_buf, ts_buf_sz)) > 0)
       {
          if (num_bytes % TS_SIZE)
          {
-            // GORP: error here
+            LOG_ERROR_ARGS("Main:prereadFiles: FAIL: Incomplete transport packet received for ingest stream %d", i);
+            reportAddErrorLogArgs("Main:prereadFiles: FAIL: Incomplete transport packet received for ingest stream %d", i);
+            return -1;
          }
          num_packets = num_bytes / TS_SIZE;
 
@@ -639,6 +657,8 @@ int teardownQueues(int numFiles, int numStreams, ebp_stream_info_t **streamInfoA
          {
             LOG_ERROR_ARGS ("Main:teardownQueues: FAIL: error destroying queue for file %d stream %d",
                fileIndex, streamIndex);
+            reportAddErrorLogArgs ("Main:teardownQueues: FAIL: error destroying queue for file %d stream %d",
+               fileIndex, streamIndex);
             returnCode = -1;
          }
 
@@ -677,6 +697,7 @@ int getVideoPID(program_stream_info_t *programStreamInfo, uint32_t *PIDOut, uint
          if (videoFound)
          {
             LOG_ERROR ("Main:getVideoPID: FAIL: more than one video stream found");
+            reportAddErrorLog ("Main:getVideoPID: FAIL: more than one video stream found");
             return -1;
          }
 
@@ -787,11 +808,11 @@ varray_t *getUniqueAudioIDArray(int numFiles, program_stream_info_t *programStre
 
    if (*useLanguageAsID)
    {
-      LOG_INFO ("Main:getUniqueAudioIDArray: Constructing audio strea list: using language for ID");
+      LOG_INFO ("Main:getUniqueAudioIDArray: Constructing audio stream list: using language for ID");
    }
    else
    {
-      LOG_INFO ("Main:getUniqueAudioIDArray: Constructing audio strea list: using PID for ID");
+      LOG_INFO ("Main:getUniqueAudioIDArray: Constructing audio stream list: using PID for ID");
    }
 
 
@@ -988,6 +1009,8 @@ int setupQueues(int numIngests, program_stream_info_t *programStreamInfo,
          {
             LOG_ERROR_ARGS ("Main:setupQueues: error creating fifo for file %d, stream %d", 
                fileIndex, streamIndex);
+            reportAddErrorLogArgs ("Main:setupQueues: error creating fifo for file %d, stream %d", 
+               fileIndex, streamIndex);
             return -1;
          }
 
@@ -1006,6 +1029,8 @@ int setupQueues(int numIngests, program_stream_info_t *programStreamInfo,
          if (returnCode != 0)
          {
             LOG_ERROR_ARGS ("Main:setupQueues: error modifying boundary info for file %d, stream %d", 
+               fileIndex, streamIndex);
+            reportAddErrorLogArgs ("Main:setupQueues: error modifying boundary info for file %d, stream %d", 
                fileIndex, streamIndex);
             return -1;
          }
@@ -1038,6 +1063,7 @@ int startSocketReceiveThreads (int numIngestStreams, char **mcastAddrs, circular
       if (returnCode < 0)
       {
          LOG_ERROR_ARGS("Main:startSocketReceiveThreads: FAIL: error parsing multicast arg %s", mcastAddrs[threadIndex]);
+         reportAddErrorLogArgs("Main:startSocketReceiveThreads: FAIL: error parsing multicast arg %s", mcastAddrs[threadIndex]);
          return -1;
       }
 
@@ -1057,6 +1083,8 @@ int startSocketReceiveThreads (int numIngestStreams, char **mcastAddrs, circular
       if (returnCode)
       {
          LOG_ERROR_ARGS("Main:startSocketReceiveThreads: FAIL: error %d creating socket receive thread %d", 
+            returnCode, (*ebpSocketReceiveThreadParams)[threadIndex]->threadNum);
+         reportAddErrorLogArgs("Main:startSocketReceiveThreads: FAIL: error %d creating socket receive thread %d", 
             returnCode, (*ebpSocketReceiveThreadParams)[threadIndex]->threadNum);
          return -1;
       }
@@ -1080,12 +1108,12 @@ int stopSocketReceiveThreads (int numIngestStreams, pthread_t **socketReceiveThr
    if (returnCode < 0)
    {
       LOG_ERROR("Main:stopSocketReceiveThreads: FAIL: error waiting for socket receive threads to exit");
+      reportAddErrorLog("Main:stopSocketReceiveThreads: FAIL: error waiting for socket receive threads to exit");
       return -1;
    }
 
    for (int i=0; i<numIngestStreams; i++)
    {
-      cb_free (ebpSocketReceiveThreadParams[i]->cb);
       free (ebpSocketReceiveThreadParams[i]);
    }
 
@@ -1135,6 +1163,8 @@ int startThreads_FileIngest(int numFiles, int totalNumStreams, ebp_stream_info_t
       {
          LOG_ERROR_ARGS("Main:startThreads_FileIngest: FAIL: error %d creating analyzer thread %d", 
             returnCode, threadIndex);
+         reportAddErrorLogArgs("Main:startThreads_FileIngest: FAIL: error %d creating analyzer thread %d", 
+            returnCode, threadIndex);
           return -1;
       }
    }
@@ -1164,6 +1194,8 @@ int startThreads_FileIngest(int numFiles, int totalNumStreams, ebp_stream_info_t
       if (returnCode)
       {
          LOG_ERROR_ARGS("Main:startThreads_FileIngest: FAIL: error %d creating fileIngest thread %d", 
+            returnCode, threadIndex);
+         reportAddErrorLogArgs("Main:startThreads_FileIngest: FAIL: error %d creating fileIngest thread %d", 
             returnCode, threadIndex);
           return -1;
       }
@@ -1214,6 +1246,8 @@ int startThreads_StreamIngest(int numIngestStreams, int totalNumStreams, ebp_str
       {
          LOG_ERROR_ARGS("Main:startThreads_StreamIngest: FAIL: error %d creating analyzer thread %d", 
             returnCode, threadIndex);
+         reportAddErrorLogArgs("Main:startThreads_StreamIngest: FAIL: error %d creating analyzer thread %d", 
+            returnCode, threadIndex);
           return -1;
       }
    }
@@ -1244,6 +1278,8 @@ int startThreads_StreamIngest(int numIngestStreams, int totalNumStreams, ebp_str
       {
          LOG_ERROR_ARGS("Main:startThreads_StreamIngest: FAIL: error %d creating streamIngest thread %d", 
             returnCode, threadIndex);
+         reportAddErrorLogArgs("Main:startThreads_StreamIngest: FAIL: error %d creating streamIngest thread %d", 
+            returnCode, threadIndex);
           return -1;
       }
   }
@@ -1252,8 +1288,8 @@ int startThreads_StreamIngest(int numIngestStreams, int totalNumStreams, ebp_str
    return 0;
 }
   
-int waitForThreadsToExit(int numFiles, int totalNumStreams,
-   pthread_t **fileIngestThreads, pthread_t **analysisThreads, pthread_attr_t *threadAttr)
+int waitForThreadsToExit(int numIngests, int totalNumStreams,
+   pthread_t **ingestThreads, pthread_t **analysisThreads, pthread_attr_t *threadAttr)
 {
    LOG_INFO("Main:waitForThreadsToExit: entering");
    void *status;
@@ -1266,6 +1302,8 @@ int waitForThreadsToExit(int numFiles, int totalNumStreams,
       {
          LOG_ERROR_ARGS ("Main:waitForThreadsToExit: error %d from pthread_join() for analysis thread %d",
             returnCode, threadIndex);
+         reportAddErrorLogArgs ("Main:waitForThreadsToExit: error %d from pthread_join() for analysis thread %d",
+            returnCode, threadIndex);
          returnCode = -1;
       }
 
@@ -1273,21 +1311,21 @@ int waitForThreadsToExit(int numFiles, int totalNumStreams,
          threadIndex, (long)status);
    }
 
-   for (int threadIndex = 0; threadIndex < numFiles; threadIndex++)
+   for (int threadIndex = 0; threadIndex < numIngests; threadIndex++)
    {
-      returnCode = pthread_join(*(fileIngestThreads[threadIndex]), &status);
+      returnCode = pthread_join(*(ingestThreads[threadIndex]), &status);
       if (returnCode) 
       {
-         LOG_ERROR_ARGS ("Main:waitForThreadsToExit: error %d from pthread_join() for fileIngest thread %d",
+         LOG_ERROR_ARGS ("Main:waitForThreadsToExit: error %d from pthread_join() for ingest thread %d",
+            returnCode, threadIndex);
+         reportAddErrorLogArgs ("Main:waitForThreadsToExit: error %d from pthread_join() for ingest thread %d",
             returnCode, threadIndex);
          returnCode = -1;
       }
 
-      LOG_INFO_ARGS("Main:waitForThreadsToExit: completed join with fileIngest thread %d: status = %ld", 
+      LOG_INFO_ARGS("Main:waitForThreadsToExit: completed join with ingest thread %d: status = %ld", 
          threadIndex, (long)status);
    }
-
-   pthread_attr_destroy(threadAttr);
         
    LOG_INFO ("Main:waitForThreadsToExit: exiting");
    return returnCode;
@@ -1307,6 +1345,8 @@ int waitForSocketReceiveThreadsToExit(int numIngestStreams,
       {
          LOG_ERROR_ARGS ("Main:waitForSocketReceiveThreadsToExit: error %d from pthread_join() for socket receive thread %d",
             returnCode, threadIndex);
+         reportAddErrorLogArgs ("Main:waitForSocketReceiveThreadsToExit: error %d from pthread_join() for socket receive thread %d",
+            returnCode, threadIndex);
          returnCode = -1;
       }
 
@@ -1314,7 +1354,7 @@ int waitForSocketReceiveThreadsToExit(int numIngestStreams,
          threadIndex, (long)status);
    }
 
-   pthread_attr_destroy(threadAttr);
+//   pthread_attr_destroy(threadAttr);
         
    LOG_INFO ("Main:waitForSocketReceiveThreadsToExit: exiting");
    return returnCode;
@@ -1452,6 +1492,13 @@ int main(int argc, char** argv)
        }
    }
 
+   int nReturn = set_log_file("C:\\Cablelabs\\EBP_Validator\\ats-ebp-validator\\atstest\\test_log.txt");
+   if (nReturn != 0)
+   {
+      printf ("ERROR opening log file\n");
+   }
+   
+
    if (fileFlag && streamFlag)
    {
       LOG_INFO ("Main: File (-f) and Stream (-s) cannot be specified simultaneously");
@@ -1467,6 +1514,8 @@ int main(int argc, char** argv)
       LOG_INFO_ARGS ("Main: FilePath %d = %s", i, argv[i]); 
    }
 
+   reportInit();
+
    if (fileFlag)
    {
       runFileIngestMode(numFiles, &argv[optind], peekFlag);
@@ -1476,8 +1525,12 @@ int main(int argc, char** argv)
       runStreamIngestMode(numFiles, &argv[optind], peekFlag);
    }
 
-
+   reportCleanup();
+   
    LOG_INFO ("Main: exiting");
+
+   cleanup_log_file();
+   
    return 0;
 }
 
@@ -1499,10 +1552,11 @@ void runStreamIngestMode(int numIngestStreams, char **ingestAddrs, int peekFlag)
    for (int i=0; i<numIngestStreams; i++)
    {
       ingestBuffers[i] = (circular_buffer_t *)calloc (1, sizeof (circular_buffer_t));
-      returnCode = cb_init (ingestBuffers[i], 1000 * TS_SIZE /* GORP */);
+      returnCode = cb_init (ingestBuffers[i], 10000 * TS_SIZE /* GORP */);
       if (returnCode != 0)
       {
          LOG_ERROR ("runStreamIngestMode: FATAL ERROR creating circular buffer: exiting"); 
+         reportAddErrorLog ("runStreamIngestMode: FATAL ERROR creating circular buffer: exiting"); 
          exit (-1);
       }
    }
@@ -1515,6 +1569,7 @@ void runStreamIngestMode(int numIngestStreams, char **ingestAddrs, int peekFlag)
    if (returnCode != 0)
    {
       LOG_ERROR ("runStreamIngestMode: FATAL ERROR during startSocketReceiveThreads for preread: exiting"); 
+      reportAddErrorLog ("runStreamIngestMode: FATAL ERROR during startSocketReceiveThreads for preread: exiting"); 
       exit (-1);
    }
 
@@ -1522,14 +1577,7 @@ void runStreamIngestMode(int numIngestStreams, char **ingestAddrs, int peekFlag)
    if (returnCode != 0)
    {
       LOG_ERROR ("runStreamIngestMode: FATAL ERROR during prereadFiles: exiting"); 
-      exit (-1);
-   }
-
-   returnCode = stopSocketReceiveThreads (numIngestStreams, socketReceiveThreads, 
-      &threadAttr1, ebpSocketReceiveThreadParams);
-   if (returnCode != 0)
-   {
-      LOG_ERROR ("runStreamIngestMode: FATAL: ERROR during stopSocketReceiveThreads after preread: exiting"); 
+      reportAddErrorLog ("runStreamIngestMode: FATAL ERROR during prereadFiles: exiting"); 
       exit (-1);
    }
 
@@ -1540,12 +1588,13 @@ void runStreamIngestMode(int numIngestStreams, char **ingestAddrs, int peekFlag)
    if (returnCode != 0)
    {
       LOG_ERROR ("runStreamIngestMode: FATAL ERROR during setupQueues: exiting"); 
+      reportAddErrorLog ("runStreamIngestMode: FATAL ERROR during setupQueues: exiting"); 
       exit (-1);
    }
 
+   printStreamInfo(numIngestStreams, numStreamsPerIngest, streamInfoArray, ingestAddrs);
    if (peekFlag)
    {
-      printStreamInfo(numIngestStreams, numStreamsPerIngest, streamInfoArray, ingestAddrs);
       return;
    }
 
@@ -1553,20 +1602,81 @@ void runStreamIngestMode(int numIngestStreams, char **ingestAddrs, int peekFlag)
    pthread_t **analysisThreads;
    pthread_attr_t threadAttr;
 
-
    returnCode = startThreads_StreamIngest(numIngestStreams, numStreamsPerIngest, streamInfoArray, ingestBuffers,
       ingestPassFails, &streamIngestThreads, &analysisThreads, &threadAttr);
    if (returnCode != 0)
    {
       LOG_ERROR ("runStreamIngestMode: FATAL ERROR during startThreads: exiting"); 
+      reportAddErrorLog ("runStreamIngestMode: FATAL ERROR during startThreads: exiting"); 
       exit (-1);
    }
 
-   returnCode = startSocketReceiveThreads (numIngestStreams, ingestAddrs, ingestBuffers, &socketReceiveThreads, 
-      &threadAttr1, &ebpSocketReceiveThreadParams);
-   if (returnCode != 0)
+   // keyboard listener here
+   while (1)
    {
-      LOG_ERROR ("runStreamIngestMode: FATAL ERROR during startSocketReceiveThreads for main read: exiting"); 
+      printf ("\n----------------------------------\n");
+      printf ("Type\n");
+      printf ("    x then return to exit\n");
+      printf ("    r then return to create report\n");
+      printf ("    c then return to clear report data\n");
+      printf ("Entry: ");
+
+      int myChar = getchar();
+      if (myChar == '\n' || myChar == '\r')
+      {
+         myChar = getchar();
+      }
+
+      if (myChar == 'x')
+      {
+         break;
+      }
+      else if (myChar == 'r')
+      {
+         printf ("Printing report...\n");
+         char *reportPath = reportPrint(numIngestStreams, numStreamsPerIngest, streamInfoArray, ingestAddrs);
+         if (reportPath == NULL)
+         {
+            printf ("Report generation FAILED!\n");
+         }
+         else
+         {
+            printf ("Report complete: %s\n", reportPath);
+            free (reportPath);
+         }
+      }
+      else if (myChar == 'c')
+      {
+         printf ("Clearing report data...\n");
+         reportClearData();
+         // GORP: reset stream pass/fails too
+      }
+      else
+      {
+         printf ("Unknown request: %c\n", myChar);
+      }
+   }
+   printf ("Exiting...\n");
+
+
+
+   // this will cause all the threads to exit
+   for (int i=0; i<numIngestStreams; i++)
+   {
+      returnCode = cb_disable (ingestBuffers[i]);
+      if (returnCode != 0)
+      {
+         LOG_ERROR ("runStreamIngestMode: ERROR calling cb_disable"); 
+         reportAddErrorLog ("runStreamIngestMode: ERROR calling cb_disable"); 
+      }
+   }
+
+ 
+   returnCode = waitForSocketReceiveThreadsToExit(numIngestStreams, socketReceiveThreads, &threadAttr);
+   if (returnCode < 0)
+   {
+      LOG_ERROR("Main:stopSocketReceiveThreads: FAIL: error waiting for socket receive threads to exit");
+      reportAddErrorLog("Main:stopSocketReceiveThreads: FAIL: error waiting for socket receive threads to exit");
       exit (-1);
    }
 
@@ -1574,15 +1684,12 @@ void runStreamIngestMode(int numIngestStreams, char **ingestAddrs, int peekFlag)
    if (returnCode != 0)
    {
       LOG_ERROR ("runStreamIngestMode: FATAL ERROR during waitForThreadsToExit: exiting"); 
+      reportAddErrorLog ("runStreamIngestMode: FATAL ERROR during waitForThreadsToExit: exiting"); 
       exit (-1);
    }
 
-   returnCode = stopSocketReceiveThreads (numIngestStreams, socketReceiveThreads, 
-      &threadAttr1, ebpSocketReceiveThreadParams);
-   if (returnCode != 0)
-   {
-      LOG_ERROR ("runStreamIngestMode: FATAL: ERROR during stopSocketReceiveThreads after main read: exiting"); 
-   }
+   pthread_attr_destroy(&threadAttr);
+
 
    // analyze the pass fail results
    analyzeResults(numIngestStreams, numStreamsPerIngest, streamInfoArray, ingestAddrs, ingestPassFails);
@@ -1592,17 +1699,23 @@ void runStreamIngestMode(int numIngestStreams, char **ingestAddrs, int peekFlag)
    if (returnCode != 0)
    {
       LOG_ERROR ("runStreamIngestMode: FATAL ERROR during teardownQueues: exiting"); 
+      reportAddErrorLog ("runStreamIngestMode: FATAL ERROR during teardownQueues: exiting"); 
       exit (-1);
    }
 
    freeProgramStreamInfo (programStreamInfo);
    free (ingestPassFails);
 
-   // GORP: free circular buffers here
+   // free circular buffers here
+   for (int i=0; i<numIngestStreams; i++)
+   {
+      cb_free (ingestBuffers[i]);
+   }
 
-   pthread_exit(NULL);
 
    LOG_INFO ("runStreamIngestMode: exiting");
+
+ //  pthread_exit(NULL);
 }
 
 void runFileIngestMode(int numFiles, char **filePaths, int peekFlag)
@@ -1619,6 +1732,7 @@ void runFileIngestMode(int numFiles, char **filePaths, int peekFlag)
    if (returnCode != 0)
    {
       LOG_ERROR ("runFileIngestMode: FATAL ERROR during prereadFiles: exiting"); 
+      reportAddErrorLog ("runFileIngestMode: FATAL ERROR during prereadFiles: exiting"); 
       exit (-1);
    }
 
@@ -1629,12 +1743,13 @@ void runFileIngestMode(int numFiles, char **filePaths, int peekFlag)
    if (returnCode != 0)
    {
       LOG_ERROR ("runFileIngestMode: FATAL ERROR during setupQueues: exiting"); 
+      reportAddErrorLog ("runFileIngestMode: FATAL ERROR during setupQueues: exiting"); 
       exit (-1);
    }
 
+   printStreamInfo(numFiles, numStreamsPerFile, streamInfoArray, filePaths);
    if (peekFlag)
    {
-      printStreamInfo(numFiles, numStreamsPerFile, streamInfoArray, filePaths);
       return;
    }
 
@@ -1647,6 +1762,7 @@ void runFileIngestMode(int numFiles, char **filePaths, int peekFlag)
    if (returnCode != 0)
    {
       LOG_ERROR ("runFileIngestMode: FATAL ERROR during startThreads: exiting"); 
+      reportAddErrorLog ("runFileIngestMode: FATAL ERROR during startThreads: exiting"); 
       exit (-1);
    }
 
@@ -1654,8 +1770,12 @@ void runFileIngestMode(int numFiles, char **filePaths, int peekFlag)
    if (returnCode != 0)
    {
       LOG_ERROR ("runFileIngestMode: FATAL ERROR during waitForThreadsToExit: exiting"); 
+      reportAddErrorLog ("runFileIngestMode: FATAL ERROR during waitForThreadsToExit: exiting"); 
       exit (-1);
    }
+
+   pthread_attr_destroy(&threadAttr);
+
 
    // analyze the pass fail results
    analyzeResults(numFiles, numStreamsPerFile, streamInfoArray, filePaths, filePassFails);
@@ -1665,6 +1785,7 @@ void runFileIngestMode(int numFiles, char **filePaths, int peekFlag)
    if (returnCode != 0)
    {
       LOG_ERROR ("runFileIngestMode: FATAL ERROR during teardownQueues: exiting"); 
+      reportAddErrorLog ("runFileIngestMode: FATAL ERROR during teardownQueues: exiting"); 
       exit (-1);
    }
 
