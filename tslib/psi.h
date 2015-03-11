@@ -173,9 +173,13 @@ int program_map_section_print(program_map_section_t *pms, char *str, size_t str_
 #define STREAM_TYPE_S3D_SC_MPEG2            0x22
 #define STREAM_TYPE_S3D_SC_AVC              0x23
 #define STREAM_TYPE_HEVC                    0x24
-#define STREAM_TYPE_IPMP		    0x7F
+#define STREAM_TYPE_IPMP		              0x7F
 //FIXME: handle registration descriptor
-#define STREAM_TYPE_AC3_AUDIO       0x81 // ATSC A/52B, A3.1 AC3 Stream Type
+#define STREAM_TYPE_AC3_AUDIO               0x81 // ATSC A/52B, A3.1 AC3 Stream Type
+#define STREAM_TYPE_SCTE35                  0x86 
+
+
+#define IS_SCTE35_STREAM(x) (x == STREAM_TYPE_SCTE35)
 
 #define IS_VIDEO_STREAM(x) ((x == STREAM_TYPE_MPEG1_VIDEO) || \
                             (x == STREAM_TYPE_MPEG2_VIDEO) || \

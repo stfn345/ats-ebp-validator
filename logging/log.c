@@ -34,10 +34,34 @@
 
 #include "log.h"
 
-int tslib_loglevel = TSLIB_LOG_LEVEL_DEBUG; 
+int tslib_loglevel = TSLIB_LOG_LEVEL_INFO; 
+FILE* tslib_logfile = NULL;
+
 
 #define INDENT_LEVEL	4
 #define PREFIX_BUF_LEN	0x80
+
+
+int set_log_file(char * logFilePath)
+{
+   tslib_logfile = fopen (logFilePath, "w");
+   if (tslib_logfile == NULL)
+   {
+      return -1;
+   }
+
+   return 0;
+}
+
+void cleanup_log_file()
+{
+   if (tslib_logfile != NULL)
+   {
+      fclose (tslib_logfile);
+      tslib_logfile = NULL;
+   }
+}
+
 
 int skit_log_struct(int num_indents, char *name, uint64_t value, int type, char *str) 
 { 
@@ -74,31 +98,31 @@ int skit_log_struct(int num_indents, char *name, uint64_t value, int type, char 
    switch (type) 
    {
    case SKIT_LOG_TYPE_UINT:
-      nbytes += fprintf(stdout, "INFO: %s%s=%"PRId64"", prefix, real_name, (uint64_t)value); 
+      nbytes += fprintf((tslib_logfile == NULL)?stdout:tslib_logfile, "INFO: %s%s=%"PRId64"", prefix, real_name, (uint64_t)value); 
       break; 
    case SKIT_LOG_TYPE_UINT_DBG:
-      nbytes += fprintf(stdout, "DEBUG: %s%s=%"PRId64"", prefix, real_name, (uint64_t)value); 
+      nbytes += fprintf((tslib_logfile == NULL)?stdout:tslib_logfile, "DEBUG: %s%s=%"PRId64"", prefix, real_name, (uint64_t)value); 
       break; 
    case SKIT_LOG_TYPE_UINT_HEX:
-      nbytes += fprintf(stdout, "INFO: %s%s=0x%"PRIX64"", prefix, real_name, (uint64_t)value); 
+      nbytes += fprintf((tslib_logfile == NULL)?stdout:tslib_logfile, "INFO: %s%s=0x%"PRIX64"", prefix, real_name, (uint64_t)value); 
       break; 
    case SKIT_LOG_TYPE_UINT_HEX_DBG:
-      nbytes += fprintf(stdout, "DEBUG: %s%s=0x%"PRIX64"", prefix, real_name, (uint64_t)value); 
+      nbytes += fprintf((tslib_logfile == NULL)?stdout:tslib_logfile, "DEBUG: %s%s=0x%"PRIX64"", prefix, real_name, (uint64_t)value); 
       break; 
    case SKIT_LOG_TYPE_STR:
-      nbytes += fprintf(stdout, "INFO: %s%s=%s", prefix, real_name, (char *)value); 
+      nbytes += fprintf((tslib_logfile == NULL)?stdout:tslib_logfile, "INFO: %s%s=%s", prefix, real_name, (char *)value); 
       break; 
    case SKIT_LOG_TYPE_STR_DBG:
-      nbytes += fprintf(stdout, "INFO: %s%s=%s", prefix, real_name, (char *)value); 
+      nbytes += fprintf((tslib_logfile == NULL)?stdout:tslib_logfile, "INFO: %s%s=%s", prefix, real_name, (char *)value); 
       break; 
    default:
       break;
    }
 
    if (str)
-   nbytes += fprintf(stdout, " (%s)\n", str);
+   nbytes += fprintf((tslib_logfile == NULL)?stdout:tslib_logfile, " (%s)\n", str);
    else
-   nbytes += fprintf(stdout, "\n");
+   nbytes += fprintf((tslib_logfile == NULL)?stdout:tslib_logfile, "\n");
 
    // TODO logging tasks:
    //  - additional targets (file, string)

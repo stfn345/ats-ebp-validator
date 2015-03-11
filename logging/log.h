@@ -44,6 +44,14 @@ extern "C" {
 #include <errno.h>
 #include <stdlib.h>
 
+int set_log_file(char * logFilePath);
+void cleanup_log_file();
+
+extern int tslib_loglevel;
+extern FILE* tslib_logfile;
+
+
+
 #define SKIT_LOG_TYPE_UINT			0x01
 #define SKIT_LOG_TYPE_UINT_HEX		0x02
 #define SKIT_LOG_TYPE_STR			0x03
@@ -52,9 +60,9 @@ extern "C" {
 #define SKIT_LOG_TYPE_UINT_HEX_DBG	0x05
 #define SKIT_LOG_TYPE_STR_DBG		0x06
 
-#define SKIT_LOG_UINT32_DBG(str, prefix, arg, n)  fprintf(stdout, "DEBUG: %s%s=%"PRIu32"\n", prefix, #arg, (arg));
-#define SKIT_LOG_UINT32_HEX_DBG(str, prefix, arg, n)  fprintf(stdout, "DEBUG: %s%s=%"PRIX32"\n", prefix, #arg, (arg));
-#define SKIT_LOG_UINT64_DBG(str, prefix, arg, n)  fprintf(stdout, "DEBUG: %s%s=%"PRIu64"\n", prefix, #arg, (arg));
+#define SKIT_LOG_UINT32_DBG(str, prefix, arg, n)  fprintf((tslib_logfile == NULL)?stdout:tslib_logfile, "DEBUG: %s%s=%"PRIu32"\n", prefix, #arg, (arg));
+#define SKIT_LOG_UINT32_HEX_DBG(str, prefix, arg, n)  fprintf((tslib_logfile == NULL)?stdout:tslib_logfile, "DEBUG: %s%s=%"PRIX32"\n", prefix, #arg, (arg));
+#define SKIT_LOG_UINT64_DBG(str, prefix, arg, n)  fprintf((tslib_logfile == NULL)?stdout:tslib_logfile, "DEBUG: %s%s=%"PRIu64"\n", prefix, #arg, (arg));
 
 #define SKIT_LOG_UINT(str, level, arg, n) skit_log_struct((level), #arg,  (arg), SKIT_LOG_TYPE_UINT, NULL);
 #define SKIT_LOG_UINT_DBG(str, level, arg, n) skit_log_struct((level), #arg,  (arg), SKIT_LOG_TYPE_UINT_DBG, NULL);
@@ -75,44 +83,43 @@ int skit_log_struct(int level, char *name, uint64_t value, int type, char *str);
 
 #define TSLIB_LOG_LEVEL_DEFAULT		TSLIB_LOG_LEVEL_WARN
 
-extern int tslib_loglevel;
 
 #define LOG_ERROR(msg)				{ if (tslib_loglevel >= TSLIB_LOG_LEVEL_ERROR) \
-										fprintf(stdout, "ERROR: %s\t\t[%s() @ %s:%d]\n", msg, __FUNCTION__, __FILE__, __LINE__); }
+										fprintf((tslib_logfile == NULL)?stdout:tslib_logfile, "ERROR: %s\t\t[%s() @ %s:%d]\n", msg, __FUNCTION__, __FILE__, __LINE__); }
 #define LOG_ERROR_ARGS(format, ...)	{ if (tslib_loglevel >= TSLIB_LOG_LEVEL_ERROR) { \
-										fprintf(stdout, "ERROR: "); \
-										fprintf(stdout, format, __VA_ARGS__); \
-										fprintf(stdout, "\t\t[%s() @ %s:%d]\n", __FUNCTION__, __FILE__, __LINE__); } \
+										fprintf((tslib_logfile == NULL)?stdout:tslib_logfile, "ERROR: "); \
+										fprintf((tslib_logfile == NULL)?stdout:tslib_logfile, format, __VA_ARGS__); \
+										fprintf((tslib_logfile == NULL)?stdout:tslib_logfile, "\t\t[%s() @ %s:%d]\n", __FUNCTION__, __FILE__, __LINE__); } \
 									}
 
 #define LOG_WARN(msg)				{	if (tslib_loglevel >= TSLIB_LOG_LEVEL_DEBUG) \
-											fprintf(stdout, "WARNING: %s\t\t[%s() @ %s:%d]\n", msg, __FUNCTION__, __FILE__, __LINE__); \
+											fprintf((tslib_logfile == NULL)?stdout:tslib_logfile, "WARNING: %s\t\t[%s() @ %s:%d]\n", msg, __FUNCTION__, __FILE__, __LINE__); \
 										else if (tslib_loglevel >= TSLIB_LOG_LEVEL_WARN) \
-											fprintf(stdout, "WARNING: %s\n", msg); \
+											fprintf((tslib_logfile == NULL)?stdout:tslib_logfile, "WARNING: %s\n", msg); \
 									}
 #define LOG_WARN_ARGS(format, ...)	{ if (tslib_loglevel >= TSLIB_LOG_LEVEL_WARN) { \
-										fprintf(stdout, "WARNING: "); \
-										fprintf(stdout, format, __VA_ARGS__); \
+										fprintf((tslib_logfile == NULL)?stdout:tslib_logfile, "WARNING: "); \
+										fprintf((tslib_logfile == NULL)?stdout:tslib_logfile, format, __VA_ARGS__); \
 										if (tslib_loglevel >= TSLIB_LOG_LEVEL_DEBUG) \
-											fprintf(stdout, "\t\t[%s() @ %s:%d]\n", __FUNCTION__, __FILE__, __LINE__); \
+											fprintf((tslib_logfile == NULL)?stdout:tslib_logfile, "\t\t[%s() @ %s:%d]\n", __FUNCTION__, __FILE__, __LINE__); \
 										else \
-											fprintf(stdout, "\n"); \
+											fprintf((tslib_logfile == NULL)?stdout:tslib_logfile, "\n"); \
 									}}
 
 #define LOG_INFO(msg)				{ if (tslib_loglevel >= TSLIB_LOG_LEVEL_INFO) \
-										fprintf(stdout, "INFO: %s\n", msg); }
+										fprintf((tslib_logfile == NULL)?stdout:tslib_logfile, "INFO: %s\n", msg);}
 #define LOG_INFO_ARGS(format, ...)	{ if (tslib_loglevel >= TSLIB_LOG_LEVEL_INFO) { \
-										fprintf(stdout, "INFO: "); \
-										fprintf(stdout, format, __VA_ARGS__); \
-										fprintf(stdout, "\n"); } \
+										fprintf((tslib_logfile == NULL)?stdout:tslib_logfile, "INFO: "); \
+										fprintf((tslib_logfile == NULL)?stdout:tslib_logfile, format, __VA_ARGS__); \
+										fprintf((tslib_logfile == NULL)?stdout:tslib_logfile, "\n");} \
 									}
 
 #define LOG_DEBUG(msg)				{ if (tslib_loglevel >= TSLIB_LOG_LEVEL_DEBUG) \
-										fprintf(stdout, "DEBUG: %s\t\t[%s() @ %s:%d]\n", msg, __FUNCTION__, __FILE__, __LINE__); }
+										fprintf((tslib_logfile == NULL)?stdout:tslib_logfile, "DEBUG: %s\t\t[%s() @ %s:%d]\n", msg, __FUNCTION__, __FILE__, __LINE__); }
 #define LOG_DEBUG_ARGS(format, ...)	{ if (tslib_loglevel >= TSLIB_LOG_LEVEL_DEBUG) { \
-										fprintf(stdout, "DEBUG: "); \
-										fprintf(stdout, format, __VA_ARGS__); \
-										fprintf(stdout, "\t\t[%s() @ %s:%d]\n", __FUNCTION__, __FILE__, __LINE__); } \
+										fprintf((tslib_logfile == NULL)?stdout:tslib_logfile, "DEBUG: "); \
+										fprintf((tslib_logfile == NULL)?stdout:tslib_logfile, format, __VA_ARGS__); \
+										fprintf((tslib_logfile == NULL)?stdout:tslib_logfile, "\t\t[%s() @ %s:%d]\n", __FUNCTION__, __FILE__, __LINE__); } \
 									}
 
 

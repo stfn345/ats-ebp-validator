@@ -27,6 +27,9 @@
 //#define TS_SIZE 17
 
 #define EBP_NUM_PARTITIONS 10  // 0 - 9
+#define EBP_ALLOWED_PTS_JITTER_SECS  2  // if the expected period is given in the EBP descriptor, then this value
+                                        // gives the required accuracy in conforming to that period
+#define SCTE35_EBP_PTS_JITTER_SECS  2  // the allowed timing jitter between SCTE35 points and their accompanying EBPs
 #define SAP_STREAM_TYPE_NOT_SUPPORTED  99
 #define SAP_STREAM_TYPE_ERROR  100
 
@@ -39,6 +42,10 @@ typedef struct
    uint32_t implicitPID; // only applicable if implicit -- default is video PID
 
    varray_t* queueLastImplicitPTS;
+
+   varray_t* listSCTE35;
+
+   uint64_t lastPTS;
 
 } ebp_boundary_info_t;
 
@@ -55,6 +62,9 @@ typedef struct
    int streamPassFail;  // 1 == pass, 0 == fail
 
    thread_safe_fifo_t *fifo;
+
+   // GORP: add SCTE35 list here?
+
 
    int ebpChunkCntr;
 

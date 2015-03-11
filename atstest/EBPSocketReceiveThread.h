@@ -27,7 +27,7 @@ typedef struct
     unsigned short port;
 
     int threadNum;
-    char *streamLogFile;
+    int enableStreamDump;
 
     int stopFlag;
 

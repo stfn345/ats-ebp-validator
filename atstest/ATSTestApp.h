@@ -21,7 +21,8 @@
 
 #include "EBPStreamBuffer.h"
 
-#define PREREAD_EBP_SEARCH_TIME_MSECS   10000
+//#define PREREAD_EBP_SEARCH_TIME_MSECS   10000
+#define PREREAD_EBP_SEARCH_TIME_MSECS   10000000
 
 typedef struct
 {
@@ -61,7 +62,7 @@ int setupQueues(int numIngests, program_stream_info_t *programStreamInfo,
                 ebp_stream_info_t ***streamInfoArray, int *numStreamsPerIngest);
 
 void runFileIngestMode(int numFiles, char **filePaths, int peekFlag);
-void runStreamIngestMode(int numngestStreams, char **ingestAddrs, int peekFlag);
+void runStreamIngestMode(int numngestStreams, char **ingestAddrs, int peekFlag, int enableStreamDump);
 
 int parseMulticastAddrArg (char *inputArg, unsigned long *pIP, unsigned short *pPort);
 
@@ -71,7 +72,8 @@ int startThreads_StreamIngest(int numIngestStreams, int totalNumStreams, ebp_str
    int *filePassFails, pthread_t ***streamIngestThreads, pthread_t ***analysisThreads, pthread_attr_t *threadAttr);
 
 int startSocketReceiveThreads (int numIngestStreams, char **mcastAddrs, circular_buffer_t **ingestBuffers,
-   pthread_t ***socketReceiveThreads, pthread_attr_t *threadAttr, ebp_socket_receive_thread_params_t ***ebpSocketReceiveThreadParams);
+   pthread_t ***socketReceiveThreads, pthread_attr_t *threadAttr, ebp_socket_receive_thread_params_t ***ebpSocketReceiveThreadParams,
+   int enableStreamDump);
 int stopSocketReceiveThreads (int numIngestStreams, pthread_t **socketReceiveThreads, 
    pthread_attr_t *threadAttr, ebp_socket_receive_thread_params_t **ebpSocketReceiveThreadParams);
 int waitForSocketReceiveThreadsToExit(int numIngestStreams,

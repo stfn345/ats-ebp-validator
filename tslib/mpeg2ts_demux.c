@@ -385,7 +385,6 @@ int mpeg2ts_program_read_pmt(mpeg2ts_program_t *m2p, ts_packet_t *ts)
       return ret;
    }
    
-//   printf ("Calling program_map_section_read\n");
    if (program_map_section_read(new_pms, ts->payload.bytes + 1, ts->payload.len - 1) == 0) 
    {
       program_map_section_free(new_pms); 
@@ -452,7 +451,7 @@ int mpeg2ts_stream_reset(mpeg2ts_stream_t *m2s)
             pid_cnt++; 
             if ((pi->demux_validator != NULL) && (pi->demux_validator->process_ts_packet != NULL)) 
             {
-               pi->demux_validator->process_ts_packet(NULL, pi->es_info, pi->demux_handler->arg);            
+               pi->demux_validator->process_ts_packet(NULL, pi->es_info, pi->demux_validator->arg);            
             }
             if ((pi->demux_handler != NULL) && (pi->demux_handler->process_ts_packet != NULL)) 
             {
@@ -509,7 +508,9 @@ int mpeg2ts_stream_read_ts_packet(mpeg2ts_stream_t *m2s, ts_packet_t *ts)
           continue;
       
       if (m2p->PID == ts->header.PID)
+      {
           return mpeg2ts_program_read_pmt(m2p, ts);  // got a PMT
+      }
 
       if (m2p->scte128_enabled) {
          ts_parse_scte128_af_private(&ts->adaptation_field);
@@ -528,7 +529,7 @@ int mpeg2ts_stream_read_ts_packet(mpeg2ts_stream_t *m2s, ts_packet_t *ts)
          if ((pi->demux_validator != NULL) && (pi->demux_validator->process_ts_packet != NULL)) 
          {
             // TODO: check return value and do something intelligent 
-            pi->demux_validator->process_ts_packet(ts, pi->es_info, pi->demux_handler->arg);            
+            pi->demux_validator->process_ts_packet(ts, pi->es_info, pi->demux_validator->arg);            
          }
          
          if ((pi->demux_handler != NULL) && (pi->demux_handler->process_ts_packet != NULL)) 

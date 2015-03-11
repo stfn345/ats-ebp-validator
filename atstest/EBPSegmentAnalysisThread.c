@@ -114,7 +114,6 @@ void *EBPSegmentAnalysisThreadProc(void *threadParams)
                   
                if (!nextPTSSet)
                {
-                  // GORP: add partition ID here
                   nextPartitionId = ebpSegmentInfo->partitionId;
                   nextPTS = ebpSegmentInfo->PTS;
                   nextPTSSet = 1;
@@ -138,6 +137,8 @@ void *EBPSegmentAnalysisThreadProc(void *threadParams)
                      streamInfo->streamPassFail = 0;
                   }
                }
+
+               checkDistanceFromLastPTS(ebpSegmentAnalysisThreadParams->threadID, streamInfo, ebpSegmentInfo);
 
                // next check that acquisition time matches
                if (!acquisitionTimeSet)
@@ -421,6 +422,52 @@ int syncIncomingStreams (int threadID, int numFiles, ebp_stream_info_t **streamI
 
    return 0;
 }
+
+
+void checkDistanceFromLastPTS(int threadID, ebp_stream_info_t *streamInfo, ebp_segment_info_t *ebpSegmentInfo)
+{ 
+   if (ebpSegmentInfo->latestEBPDescriptor == NULL)
+   {
+      // no check
+      return;
+   }
+
+   ebp_partition_data_t* partition = get_partition (ebpSegmentInfo->latestEBPDescriptor, ebpSegmentInfo->partitionId);
+   if (partition == NULL)
+   {
+      // no check
+      return;
+   }
+
+   float numSecsGap = partition->ebp_distance / ebpSegmentInfo->latestEBPDescriptor->ticks_per_second;
+
+   ebp_boundary_info_t *ebpBoundaryInfo = &((streamInfo->ebpBoundaryInfo)[ebpSegmentInfo->partitionId]);
+   uint64_t expectedPTS = ebpBoundaryInfo->lastPTS + numSecsGap * 90000;
+   uint64_t deltaPTS;
+   if (expectedPTS > ebpSegmentInfo->PTS)
+   {
+      deltaPTS = expectedPTS - ebpSegmentInfo->PTS;
+   }
+   else
+   {
+      deltaPTS = ebpSegmentInfo->PTS - expectedPTS;
+   }
+   LOG_INFO_ARGS ("PTS = %"PRId64", expected PTS= %"PRId64", deltaPTS = %"PRId64"", 
+      ebpSegmentInfo->PTS, expectedPTS, deltaPTS);
+
+   if (ebpBoundaryInfo->lastPTS != 0 && deltaPTS > EBP_ALLOWED_PTS_JITTER_SECS * 90000)
+   {
+      LOG_ERROR_ARGS ("EBPSegmentAnalysisThread %d: PTS %"PRId64" differs from expected PTS %"PRId64" for partition %d", threadID,
+         ebpSegmentInfo->PTS, expectedPTS, ebpSegmentInfo->partitionId);
+      reportAddErrorLogArgs ("EBPSegmentAnalysisThread %d: PTS %"PRId64" differs from expected PTS %"PRId64" for partition %d", threadID,
+         ebpSegmentInfo->PTS, expectedPTS, ebpSegmentInfo->partitionId);
+      streamInfo->streamPassFail = 0;
+   }
+         
+   // set LastPTS before leaving
+   ebpBoundaryInfo->lastPTS = ebpSegmentInfo->PTS;
+}
+
 
 
 void cleanupEBPSegmentInfo (ebp_segment_info_t *ebpSegmentInfo)

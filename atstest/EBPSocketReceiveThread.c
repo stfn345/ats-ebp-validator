@@ -34,6 +34,9 @@
 
 #include "ts.h"
 
+static char *g_streamDumpBaseName = "EBPStreamDump";
+
+
 void *EBPSocketReceiveThreadProc(void *threadParams)
 {
    int returnCode = 0;
@@ -129,6 +132,51 @@ void *EBPSocketReceiveThreadProc(void *threadParams)
 
    int totalTSPacketsReceived = 0;
 
+   // open log file
+   FILE *streamLogFileHandle = NULL;
+   printf ("In EBPSocketReceiveThreadProc: ebpSocketReceiveThreadParams->enableStreamDump = %d\n", ebpSocketReceiveThreadParams->enableStreamDump);
+   if (ebpSocketReceiveThreadParams->enableStreamDump)
+   {
+      printf ("Opening stream log file\n");
+      // build stream dump file path here
+      char streamLogFile[2048];
+      if (getcwd(streamLogFile, 1024) == NULL)
+      {
+         // log error, skip stream dump
+
+         LOG_ERROR_ARGS("EBPSocketReceiveThread %d: Error getting working dir: stream dump disabled", 
+            ebpSocketReceiveThreadParams->threadNum);
+         reportAddErrorLogArgs("EBPSocketReceiveThread %d: Error getting working dir: stream dump disabled", 
+            ebpSocketReceiveThreadParams->threadNum);
+
+         ebpSocketReceiveThreadParams->enableStreamDump = 0;
+      }
+      else
+      {
+         char temp[100];
+         sprintf (temp, "%s_%u.%u.%u.%u:%d.ts", 
+            g_streamDumpBaseName, 
+            (unsigned int) (ebpSocketReceiveThreadParams->ipAddr >> 24),
+            (unsigned int) ((ebpSocketReceiveThreadParams->ipAddr >> 16) & 0x0FF), 
+            (unsigned int) ((ebpSocketReceiveThreadParams->ipAddr >> 8) & 0x0FF), 
+            (unsigned int) ((ebpSocketReceiveThreadParams->ipAddr) & 0x0FF), 
+            ebpSocketReceiveThreadParams->port);
+         strcat (streamLogFile, "/");
+         strcat (streamLogFile, temp);
+
+         LOG_INFO_ARGS("EBPSocketReceiveThread %d: Opening streamLogFile %s", ebpSocketReceiveThreadParams->threadNum,
+               streamLogFile);
+         if ((streamLogFileHandle = fopen(streamLogFile, "wb")) == NULL)
+         {
+            LOG_ERROR_ARGS("EBPSocketReceiveThread %d: Error opening streamLogFile %s: %s", ebpSocketReceiveThreadParams->threadNum,
+               streamLogFile, strerror(errno));
+            reportAddErrorLogArgs("EBPSocketReceiveThread %d: Error opening streamLogFile %s", ebpSocketReceiveThreadParams->threadNum,
+               streamLogFile, strerror(errno));
+         }
+      }
+   }
+
+
    while (!ebpSocketReceiveThreadParams->stopFlag)
    {
       // only ask for the number of bytes for which there is space
@@ -186,15 +234,15 @@ void *EBPSocketReceiveThreadProc(void *threadParams)
       int returnCodeTemp = cb_write (ebpSocketReceiveThreadParams->cb, ts_buf, returnCode);
       if (returnCodeTemp == -99)
       {
-         LOG_INFO_ARGS("EBPSocketReceiveThread %d: crcular buffer disabled: exiting", 
+         LOG_INFO_ARGS("EBPSocketReceiveThread %d: circular buffer disabled: exiting", 
             ebpSocketReceiveThreadParams->threadNum);
          break;
       }
       else if (returnCodeTemp < 0)
       {
-         LOG_ERROR_ARGS("EBPSocketReceiveThread %d: Error writing to crcular buffer", 
+         LOG_ERROR_ARGS("EBPSocketReceiveThread %d: Error writing to circular buffer", 
             ebpSocketReceiveThreadParams->threadNum);
-         reportAddErrorLogArgs("EBPSocketReceiveThread %d: Error writing to crcular buffer", 
+         reportAddErrorLogArgs("EBPSocketReceiveThread %d: Error writing to circular buffer", 
             ebpSocketReceiveThreadParams->threadNum);
          break;
       }
@@ -203,13 +251,25 @@ void *EBPSocketReceiveThreadProc(void *threadParams)
 //      LOG_INFO_ARGS("EBPSocketReceiveThread %d: Total TS packets: %d", 
 //            ebpSocketReceiveThreadParams->threadNum, totalTSPacketsReceived);
 
-      if (ebpSocketReceiveThreadParams->streamLogFile != NULL)
+      if (ebpSocketReceiveThreadParams->enableStreamDump)
       {
-         // GORP: log to file
+         // log to file
+         size_t numBytesWritten = fwrite (ts_buf, 1, returnCode, streamLogFileHandle);
+         if (numBytesWritten != returnCode)
+         {
+            LOG_ERROR_ARGS("EBPSocketReceiveThread %d: Error writing to log file", 
+               ebpSocketReceiveThreadParams->threadNum);
+            reportAddErrorLogArgs("EBPSocketReceiveThread %d: Error writing to log file", 
+               ebpSocketReceiveThreadParams->threadNum);
+         }
       }
    }
 
    close (mySocket);
+   if (streamLogFileHandle != NULL)
+   {
+      fclose (streamLogFileHandle);
+   }
 
    pthread_exit(NULL);
 

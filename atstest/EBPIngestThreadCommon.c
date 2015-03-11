@@ -26,10 +26,9 @@
 #include <libts_common.h>
 #include <tpes.h>
 #include <ebp.h>
+#include <scte35.h>
 
 #include "h264_stream.h"
-
-#include "ATSTestReport.h"
 
 #include "EBPSegmentAnalysisThread.h"
 #include "EBPFileIngestThread.h"
@@ -49,6 +48,48 @@ static char* getStreamTypeDesc (elementary_stream_info_t *esi);
 
 static int validate_ts_packet(ts_packet_t *ts, elementary_stream_info_t *es_info, void *arg)
 {
+   if (IS_SCTE35_STREAM(es_info->stream_type))
+   {
+      ebp_ingest_thread_params_t *ebpIngestThreadParams = (ebp_ingest_thread_params_t *)arg;
+
+      LOG_INFO_ARGS ("SCTE35 table detected for thread %d", ebpIngestThreadParams->threadNum);
+
+      scte35_splice_info_section* splice_info = scte35_splice_info_section_new(); 
+      
+      int returnCode = scte35_splice_info_section_read(splice_info, ts->payload.bytes + 1, ts->payload.len-1);
+      if (returnCode != 0)
+      {
+         LOG_ERROR_ARGS("IngestThread %d: Error parsing SCTE35 table", ebpIngestThreadParams->threadNum);
+         reportAddErrorLogArgs("IngestThread %d: Error parsing SCTE35 table", ebpIngestThreadParams->threadNum);
+      }
+      else
+      {
+         scte35_splice_info_section_print_stdout(splice_info); 
+
+         if (is_splice_insert (splice_info))
+         {
+            uint64_t PTS = get_splice_insert_PTS (splice_info);
+            if (PTS != 0)
+            {
+               // if splice insert message, add to SCTE35 PTS lists for all partitions
+               int arrayIndex = get2DArrayIndex (ebpIngestThreadParams->threadNum, 0, ebpIngestThreadParams->numStreams);    
+               ebp_stream_info_t **streamInfos = &((ebpIngestThreadParams->allStreamInfos)[arrayIndex]);
+
+               thread_safe_fifo_t *fifo = NULL;
+               int fifoIndex = -1;
+               findFIFO (es_info->elementary_PID, streamInfos, ebpIngestThreadParams->numStreams,
+                  &fifo, &fifoIndex);
+               ebp_stream_info_t * streamInfo = streamInfos[fifoIndex];
+
+               addSCTE35Point_AllBoundaries (ebpIngestThreadParams->threadNum, streamInfo, PTS);
+            }
+         }
+         
+      }
+
+      scte35_splice_info_section_free (splice_info);
+   }
+
    return 1;
 }
 
@@ -59,6 +100,29 @@ static char* getStreamTypeDesc (elementary_stream_info_t *esi)
 
    return STREAM_TYPE_UNKNOWN;
 }
+
+/*
+static void printBoundaryInfoArray(ebp_boundary_info_t *boundaryInfoArray)
+{
+   LOG_INFO ("      EBP Boundary Info:");
+
+   for (int i=0; i<EBP_NUM_PARTITIONS; i++)
+   {
+      if (boundaryInfoArray[i].isBoundary)
+      {
+         if (boundaryInfoArray[i].isImplicit)
+         {
+            LOG_INFO_ARGS ("         PARTITION %d: IMPLICIT, PID = %d, FileIndex = %d", i, boundaryInfoArray[i].implicitPID, 
+               boundaryInfoArray[i].implicitFileIndex);
+         }
+         else
+         {
+            LOG_INFO_ARGS ("         PARTITION %d: EXPLICIT", i);
+         }
+      }
+   }
+}
+*/
 
 static int validate_pes_packet(pes_packet_t *pes, elementary_stream_info_t *esi, vqarray_t *ts_queue, void *arg)
 {
@@ -241,6 +305,9 @@ static int validate_pes_packet(pes_packet_t *pes, elementary_stream_info_t *esi,
    }
 
    free (isBoundary);
+
+   // check if this PTS exceeds any SCTE35 PTSs
+   checkPTSAgainstSCTE35Points_AllBoundaries (ebpIngestThreadParams->threadNum, streamInfo, pes->header.PTS);
 
    pes_free(pes);
    return 1;
@@ -554,7 +621,6 @@ language_descriptor_t* getLanguageDescriptor (elementary_stream_info_t *esi)
 
 int ingest_pmt_processor(mpeg2ts_program_t *m2p, void *arg)
 {
-   LOG_INFO_ARGS ("pmt_processor: arg = %x", (unsigned int) arg);
    if (m2p == NULL || m2p->pmt == NULL) // if we don't have any PSI, there's nothing we can do
       return 0;
 
@@ -579,6 +645,10 @@ int ingest_pmt_processor(mpeg2ts_program_t *m2p, void *arg)
             handle_pid = 1;
          }
          else if (IS_AUDIO_STREAM(pi->es_info->stream_type))
+         {
+            handle_pid = 1;
+         }
+         else if (IS_SCTE35_STREAM(pi->es_info->stream_type))
          {
             handle_pid = 1;
          }
@@ -736,7 +806,6 @@ void triggerImplicitBoundaries (int threadNum, ebp_stream_info_t **streamInfoArr
    }
 }
 
-
 int detectBoundary(int threadNum, ebp_t* ebp, ebp_stream_info_t *streamInfo, uint64_t PTS, int *isBoundary)
 {
    // isBoundary is an array indexed by PartitionId;
@@ -766,6 +835,13 @@ int detectBoundary(int threadNum, ebp_t* ebp, ebp_stream_info_t *streamInfo, uin
             varray_pop(ebpBoundaryInfo[i].queueLastImplicitPTS);
             isBoundary[i] = 1;
             nReturnCode = 1;
+
+            if (ebpBoundaryInfo[i].listSCTE35 != NULL)
+            {
+               // check against SCTE35
+               checkEBPAgainstSCTE35Points (ebpBoundaryInfo[i].listSCTE35, PTS, SCTE35_EBP_PTS_JITTER_SECS, threadNum,
+                  i /* partitionID */, streamInfo->PID);
+            }
          }
       }
    }
@@ -782,9 +858,9 @@ int detectBoundary(int threadNum, ebp_t* ebp, ebp_stream_info_t *streamInfo, uin
       {
          if (ebpBoundaryInfo[EBP_PARTITION_SEGMENT].isImplicit)
          {
-            LOG_ERROR_ARGS("EBPIngestThread %d: FAIL: Unexpected EBP struct detected for partition %d: PID %d", 
+            LOG_ERROR_ARGS("EBPIngestThread %d: FAIL: Unexpected EBP struct (1) detected for partition %d: PID %d", 
                threadNum, EBP_PARTITION_SEGMENT, streamInfo->PID);
-            reportAddErrorLogArgs("EBPIngestThread %d: FAIL: Unexpected EBP struct detected for partition %d: PID %d", 
+            reportAddErrorLogArgs("EBPIngestThread %d: FAIL: Unexpected EBP struct (1) detected for partition %d: PID %d", 
                threadNum, EBP_PARTITION_SEGMENT, streamInfo->PID);
          }
          else
@@ -795,9 +871,9 @@ int detectBoundary(int threadNum, ebp_t* ebp, ebp_stream_info_t *streamInfo, uin
       }
       else
       {
-         LOG_ERROR_ARGS("IngestThread %d: FAIL: Unexpected EBP struct detected for partition %d: PID %d", 
+         LOG_ERROR_ARGS("IngestThread %d: FAIL: Unexpected EBP struct detected (2) for partition %d: PID %d", 
             threadNum, EBP_PARTITION_SEGMENT, streamInfo->PID);
-         reportAddErrorLogArgs("IngestThread %d: FAIL: Unexpected EBP struct detected for partition %d: PID %d", 
+         reportAddErrorLogArgs("IngestThread %d: FAIL: Unexpected EBP struct detected (2) for partition %d: PID %d", 
             threadNum, EBP_PARTITION_SEGMENT, streamInfo->PID);
       }
    }
@@ -808,9 +884,9 @@ int detectBoundary(int threadNum, ebp_t* ebp, ebp_stream_info_t *streamInfo, uin
       {
          if (ebpBoundaryInfo[EBP_PARTITION_FRAGMENT].isImplicit)
          {
-            LOG_ERROR_ARGS("IngestThread %d: FAIL: Unexpected EBP struct detected for partition %d: PID %d", 
+            LOG_ERROR_ARGS("IngestThread %d: FAIL: Unexpected EBP struct detected (1) for partition %d: PID %d", 
                threadNum, EBP_PARTITION_FRAGMENT, streamInfo->PID);
-            reportAddErrorLogArgs("IngestThread %d: FAIL: Unexpected EBP struct detected for partition %d: PID %d", 
+            reportAddErrorLogArgs("IngestThread %d: FAIL: Unexpected EBP struct detected (1) for partition %d: PID %d", 
                threadNum, EBP_PARTITION_FRAGMENT, streamInfo->PID);
          }
          else
@@ -821,9 +897,9 @@ int detectBoundary(int threadNum, ebp_t* ebp, ebp_stream_info_t *streamInfo, uin
       }
       else
       {
-         LOG_ERROR_ARGS("IngestThread %d: FAIL: Unexpected EBP struct detected for partition %d: PID %d", 
+         LOG_ERROR_ARGS("IngestThread %d: FAIL: Unexpected EBP struct detected (2) for partition %d: PID %d", 
             threadNum, EBP_PARTITION_FRAGMENT, streamInfo->PID);
-         reportAddErrorLogArgs("IngestThread %d: FAIL: Unexpected EBP struct detected for partition %d: PID %d", 
+         reportAddErrorLogArgs("IngestThread %d: FAIL: Unexpected EBP struct detected (2) for partition %d: PID %d", 
             threadNum, EBP_PARTITION_FRAGMENT, streamInfo->PID);
       }
    }
@@ -842,9 +918,9 @@ int detectBoundary(int threadNum, ebp_t* ebp, ebp_stream_info_t *streamInfo, uin
             {
                if (ebpBoundaryInfo[i].isImplicit)
                {
-                  LOG_ERROR_ARGS("IngestThread %d: FAIL: Unexpected EBP struct detected for partition %d: PID %d", 
+                  LOG_ERROR_ARGS("IngestThread %d: FAIL: Unexpected EBP struct detected (1) for partition %d: PID %d", 
                      threadNum, i, streamInfo->PID);
-                  reportAddErrorLogArgs("IngestThread %d: FAIL: Unexpected EBP struct detected for partition %d: PID %d", 
+                  reportAddErrorLogArgs("IngestThread %d: FAIL: Unexpected EBP struct detected (1) for partition %d: PID %d", 
                      threadNum, i, streamInfo->PID);
                }
                else
@@ -855,14 +931,24 @@ int detectBoundary(int threadNum, ebp_t* ebp, ebp_stream_info_t *streamInfo, uin
             }
             else
             {
-               LOG_ERROR_ARGS("IngestThread %d: FAIL: Unexpected EBP struct detected for partition %d: PID %d", 
+               LOG_ERROR_ARGS("IngestThread %d: FAIL: Unexpected EBP struct detected (2) for partition %d: PID %d", 
                   threadNum, i, streamInfo->PID);
-               reportAddErrorLogArgs("IngestThread %d: FAIL: Unexpected EBP struct detected for partition %d: PID %d", 
+               reportAddErrorLogArgs("IngestThread %d: FAIL: Unexpected EBP struct detected (2) for partition %d: PID %d", 
                   threadNum, i, streamInfo->PID);
             }
          }
 
          ebp_ext_partitions_temp = ebp_ext_partitions_temp >> 1;
+      }
+   }
+
+   for (int i=0; i<EBP_NUM_PARTITIONS; i++)
+   {
+      if (ebpBoundaryInfo[i].listSCTE35 != NULL)
+      {
+         // check against SCTE35
+         checkEBPAgainstSCTE35Points (ebpBoundaryInfo[i].listSCTE35, PTS, SCTE35_EBP_PTS_JITTER_SECS, threadNum,
+            i /* partitionID */, streamInfo->PID);
       }
    }
 
@@ -938,5 +1024,129 @@ uint64_t adjustPTSForTests (uint64_t PTSIn, int fileIndex, ebp_stream_info_t * s
    }
 
    return PTSOut;
+}
+
+void addSCTE35Point (varray_t* scte35List, uint64_t PTS, int threadNum, int partitionID, uint32_t PID)
+{
+   // walk list and compare PTS -- 
+   // if PTS equal to list member, no action necessary
+   // insert PTS in ordered list
+
+   int insertComplete = 0;
+
+   LOG_INFO_ARGS("IngestThread %d: Adding SCTE35 PTS %"PRId64" for partition %d: PID %d", 
+      threadNum, PTS, partitionID, PID);
+   reportAddInfoLogArgs("IngestThread %d: Adding SCTE35 PTS %"PRId64" for partition %d: PID %d", 
+      threadNum, PTS, partitionID, PID);
+
+   for (int i=0; i<varray_length(scte35List); i++)
+   {
+      uint64_t *PTSTemp = (uint64_t *) varray_get (scte35List, i);
+      if (*PTSTemp == PTS)
+      {
+         insertComplete = 1;
+         break;
+      }
+      
+      if (PTS < *PTSTemp)
+      {
+         // insert into SCTEList
+         uint64_t *PTSCopy = (uint64_t *) malloc (sizeof (uint64_t));
+        *PTSCopy = PTS;
+         varray_insert(scte35List, i, PTSCopy);
+
+         insertComplete = 1;
+      }
+   }
+
+   if (!insertComplete)
+   {
+      // add to end of SCTEList
+      uint64_t *PTSCopy = (uint64_t *) malloc (sizeof (uint64_t));
+     *PTSCopy = PTS;
+      varray_add(scte35List, PTSCopy);
+   }
+}
+
+void checkPTSAgainstSCTE35Points (varray_t* scte35List, uint64_t PTS, uint64_t deltaSCTE35PTS, int threadNum,
+   int partitionID, uint32_t PID)
+{
+   // check if PTS has passed entries in SCTE35 list
+
+   for (int i=0; i<varray_length(scte35List); i++)
+   {
+      uint64_t *SCTE35PTS = (uint64_t *) varray_get (scte35List, i);
+
+      if (PTS > *SCTE35PTS + deltaSCTE35PTS)
+      {
+         // SCTE35 point has been passed without an EBP being present, so log error and discard SCTE35 PTS
+
+         LOG_ERROR_ARGS("IngestThread %d: FAIL: Out of date SCTE35 PTS %"PRId64" detected for partition %d: PID %d", 
+            threadNum, *SCTE35PTS, partitionID, PID);
+         reportAddErrorLogArgs("IngestThread %d: FAIL: Out of date SCTE35 PTS %"PRId64" detected for partition %d: PID %d", 
+            threadNum, *SCTE35PTS, partitionID, PID);
+
+         varray_remove (scte35List, i);
+         free (SCTE35PTS);
+      }
+      else
+      {
+         break;
+      }
+   }
+}
+
+void checkEBPAgainstSCTE35Points (varray_t* scte35List, uint64_t PTS, uint64_t deltaSCTE35PTS, int threadNum,
+   int partitionID, uint32_t PID)
+{
+   // check if PTS is sufficiently near the SCTE35 points
+
+   for (int i=0; i<varray_length(scte35List); i++)
+   {
+      uint64_t *SCTE35PTS = (uint64_t *) varray_get (scte35List, i);
+
+      if (PTS >= *SCTE35PTS + deltaSCTE35PTS && PTS <= *SCTE35PTS + deltaSCTE35PTS)
+      {
+         // match -- remove entry from SCTE35 list
+
+         LOG_INFO_ARGS("IngestThread %d: PTS %"PRId64" matches SCTE35 PTS %"PRId64" for partition %d: PID %d", 
+            threadNum, PTS, *SCTE35PTS, partitionID, PID);
+         reportAddInfoLogArgs("IngestThread %d: PTS %"PRId64" matches SCTE35 PTS %"PRId64" for partition %d: PID %d", 
+            threadNum, PTS, *SCTE35PTS, partitionID, PID);
+
+         varray_remove (scte35List, i);
+         free (SCTE35PTS);
+         break;
+      }
+   }
+}
+
+void addSCTE35Point_AllBoundaries (int threadNum, ebp_stream_info_t *streamInfo, uint64_t PTS)
+{
+   ebp_boundary_info_t *ebpBoundaryInfo = streamInfo->ebpBoundaryInfo;
+
+   for (int i=0; i<EBP_NUM_PARTITIONS; i++)
+   {
+      if (ebpBoundaryInfo[i].listSCTE35 == NULL)
+      {
+         ebpBoundaryInfo[i].listSCTE35 = varray_new();
+      }
+      addSCTE35Point (ebpBoundaryInfo[i].listSCTE35, PTS, threadNum, i /* partitionID */, streamInfo->PID);
+   }
+}
+
+void checkPTSAgainstSCTE35Points_AllBoundaries (int threadNum, ebp_stream_info_t *streamInfo, uint64_t PTS)
+{
+   ebp_boundary_info_t *ebpBoundaryInfo = streamInfo->ebpBoundaryInfo;
+
+   for (int i=0; i<EBP_NUM_PARTITIONS; i++)
+   {
+      if (ebpBoundaryInfo[i].listSCTE35 == NULL)
+      {
+         continue;
+      }
+      checkPTSAgainstSCTE35Points (ebpBoundaryInfo[i].listSCTE35, PTS, SCTE35_EBP_PTS_JITTER_SECS, 
+         threadNum, i /* partitionID */, streamInfo->PID);
+   }
 }
 

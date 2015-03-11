@@ -295,10 +295,9 @@ int es_info_read(elementary_stream_info_t *es, bs_t *b)
    es->elementary_PID = bs_read_u(b, 13); 
    bs_skip_u(b, 4); 
    es->ES_info_length = bs_read_u(b, 12); 
-
    
-//   printf ("es_info_read: PID = %d, streamType = %d.  Calling read_descriptor_loop\n", 
-//      es->elementary_PID, es->stream_type);
+//   printf ("es_info_read: PID = %d, streamType = 0x%x, ES_info_length = %d.  Calling read_descriptor_loop\n", 
+//      es->elementary_PID, es->stream_type, es->ES_info_length);
    
    read_descriptor_loop(es->descriptors, b, es->ES_info_length); 
    if (es->ES_info_length > MAX_ES_INFO_LEN) 
@@ -314,7 +313,6 @@ int es_info_read(elementary_stream_info_t *es, bs_t *b)
    return bs_pos(b) - es_info_start;
 }
 
-//int es_info_write(elementary_stream_info_t *es, uint8_t *buf, size_t buf_size);
 int es_info_print(elementary_stream_info_t *es, int level, char *str, size_t str_len) 
 { 
    if (es == NULL || str == NULL || str_len < 2 || tslib_loglevel < TSLIB_LOG_LEVEL_INFO) return 0; 
@@ -378,7 +376,7 @@ int program_map_section_read(program_map_section_t *pms, uint8_t *buf, size_t bu
       SAFE_REPORT_TS_ERR(-1); 
       return 0;
    }
-//   printf ("program_map_section_read\n");
+ //  printf ("program_map_section_read\n");
    
    bs_t *b = bs_new(buf, buf_size); 
    
@@ -443,7 +441,7 @@ int program_map_section_read(program_map_section_t *pms, uint8_t *buf, size_t bu
       SAFE_REPORT_TS_ERR(-44); 
       return 0;
    }
-//   printf ("PCR PID = %d\n", pms->PCR_PID);
+ //  printf ("PCR PID = %d\n", pms->PCR_PID);
    bs_skip_u(b, 4); 
    
    pms->program_info_length = bs_read_u(b, 12); 
@@ -457,14 +455,11 @@ int program_map_section_read(program_map_section_t *pms, uint8_t *buf, size_t bu
       return 0;
    }
    
-//   printf ("Calling read_descriptor_loop\n");
-
    read_descriptor_loop(pms->descriptors, b, pms->program_info_length); 
    
    while (pms->section_length - (bs_pos(b) - section_start) > 4) // account for CRC
    {
       elementary_stream_info_t *es = es_info_new();
-//      printf ("Calling es_info_read\n");
       es_info_read(es, b); 
       vqarray_add(pms->es_info, es);
    }

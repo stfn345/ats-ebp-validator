@@ -21,6 +21,7 @@
 #include <libts_common.h>
 #include <tpes.h>
 #include <ebp.h>
+#include <scte35.h>
 #include <pthread.h>
 #include <getopt.h>
 
@@ -47,8 +48,9 @@ static int pat_processor(mpeg2ts_stream_t *m2s, void *arg);
 
 static struct option long_options[] = { 
     { "file",  no_argument,        NULL, 'f' }, 
-    { "stream",  no_argument,      NULL, 's' }, 
+    { "mcast",  no_argument,      NULL, 'm' }, 
     { "peek",  no_argument,        NULL, 'p' }, 
+    { "dump",  no_argument,        NULL, 'd' }, 
     { "test",  required_argument,  NULL, 't' }, 
     { "help",  no_argument,        NULL, 'h' }, 
     { 0,  0,        0, 0 }
@@ -56,8 +58,9 @@ static struct option long_options[] = {
 
 static char options[] = 
 "\t-f, --file\n" 
-"\t-s, --stream\n" 
+"\t-m, --mcast\n" 
 "\t-p, --peek\n" 
+"\t-d, --dump\n" 
 "\t-t, --test\n"
 "\t-h, --help\n"; 
 
@@ -66,6 +69,13 @@ static void usage()
     fprintf(stderr, "\nATSTestApp\n"); 
     fprintf(stderr, "\nUsage: \nnATSTestApp [options] <input file 1> <input file 2> ... <input file N>\n\nOptions:\n%s\n", options);
     fprintf(stderr, "\nUsage: \nnATSTestApp [options] <ip1>:<port1> <ip2>:<port2> ... <ipN>:<portN> \n\nOptions:\n%s\n", options);
+    fprintf(stderr, "\n\nOption Information:\n");
+    fprintf(stderr, "file: read transport stream from file\n");
+    fprintf(stderr, "mcast: read transport steam from multicast\n");
+    fprintf(stderr, "peek: only perform initial diagnosis of stream (components, EBP descriptor info, etc)\n");
+    fprintf(stderr, "dump: save transport stream to file; file will be of the form EBPStreamDump_IP.port.ts\n");
+    fprintf(stderr, "test: perform test of tool; test name must follow\n");
+    fprintf(stderr, "help: display help options\n");
 }
 
 int parseMulticastAddrArg (char *inputArgIn, unsigned long *pIP, unsigned short *pPort)
@@ -273,6 +283,29 @@ int modBoundaryInfoArray (ebp_descriptor_t * ebpDescriptor, ebp_t *ebp, ebp_boun
 
 static int handle_ts_packet(ts_packet_t *ts, elementary_stream_info_t *es_info, void *arg)
 {
+   /*
+   if (IS_SCTE35_STREAM(es_info->stream_type))
+   {
+      printf ("GORPGORP: SCTE35 table detected\n");
+      printf ("GORPGORP: SCTE35 table ID = %x\n", (ts->payload.bytes + 1)[0]);
+      printf ("GORPGORP: SCTE35 len = %d\n", (ts->payload.len - 1));
+
+      scte35_splice_info_section* splice_info = scte35_splice_info_section_new(); 
+      
+      int returnCode = scte35_splice_info_section_read(splice_info, ts->payload.bytes + 1, ts->payload.len-1);
+      if (returnCode != 0)
+      {
+         printf ("returnCode = %d\n", returnCode);
+      }
+
+      // GORP: store PTS somewhere PTS reasonable?
+
+      scte35_splice_info_section_print_stdout(splice_info); 
+
+      scte35_splice_info_section_free (splice_info);
+   }
+   */
+
    return 1;
 }
 
@@ -286,6 +319,8 @@ static int handle_pes_packet(pes_packet_t *pes, elementary_stream_info_t *esi, v
       pes_free(pes);
       return 1; // Don't care about this packet
    }
+
+//   printf ("handle_pes_packet, PID = 0x%x, PTS = %"PRId64"\n", esi->elementary_PID, pes->header.PTS);
          
    // Read N seconds of data 
    // if we get an ebp struct in each stream before that, then exit.
@@ -305,6 +340,7 @@ static int handle_pes_packet(pes_packet_t *pes, elementary_stream_info_t *esi, v
       }
    }
 
+
    ebp_stream_info_t streamInfo;  // this isnt really used for anything -- just a placeholder in the following
    streamInfo.PID = esi->elementary_PID;
    ebp_t* ebp = getEBP(ts, &streamInfo, -1 /* threadNum */);
@@ -317,7 +353,6 @@ static int handle_pes_packet(pes_packet_t *pes, elementary_stream_info_t *esi, v
          ebp = NULL;
       }
    }
-   
 
    if (ebp != NULL)
    {         
@@ -363,9 +398,10 @@ static int handle_pes_packet(pes_packet_t *pes, elementary_stream_info_t *esi, v
    return 1;
 }
 
+
 static int pmt_processor(mpeg2ts_program_t *m2p, void *arg)
 {
-   LOG_DEBUG ("pmt_processor");
+   LOG_INFO ("pmt_processor");
    g_bPMTFound = 1;
 
    if (m2p == NULL || m2p->pmt == NULL) // if we don't have any PSI, there's nothing we can do
@@ -383,6 +419,33 @@ static int pmt_processor(mpeg2ts_program_t *m2p, void *arg)
       if ((pi = vqarray_get(m2p->pids, i)) != NULL)
       {
          int handle_pid = 0;
+
+//         printf ("stream type = %d\n", pi->es_info->stream_type);
+//         printf ("elementary PID = %d\n", pi->es_info->elementary_PID);
+         if (IS_SCTE35_STREAM(pi->es_info->stream_type))
+         {
+            printf ("SCTE35: stream type = %d\n", pi->es_info->stream_type);
+            printf ("SCTE35: elementary PID = %d\n", pi->es_info->elementary_PID);
+
+            pes_demux_t *pd = pes_demux_new(NULL);
+            pd->pes_arg = arg;
+            pd->pes_arg_destructor = NULL;
+
+            // hook PES demuxer to the PID processor
+            demux_pid_handler_t *demux_handler = calloc(1, sizeof(demux_pid_handler_t));
+            demux_handler->process_ts_packet = pes_demux_process_ts_packet;
+            demux_handler->arg = pd;
+            demux_handler->arg_destructor = (arg_destructor_t)pes_demux_free;
+
+            // hook PES demuxer to the PID processor
+            demux_pid_handler_t *demux_validator = calloc(1, sizeof(demux_pid_handler_t));
+            demux_validator->process_ts_packet = handle_ts_packet;
+            demux_validator->arg = arg;
+            demux_validator->arg_destructor = NULL;
+
+            // hook PID processor to PID
+            mpeg2ts_program_register_pid_processor(m2p, pi->es_info->elementary_PID, demux_handler, demux_validator);
+         }
 
          descriptor_t *desc = NULL;
          if (IS_VIDEO_STREAM(pi->es_info->stream_type))
@@ -422,12 +485,12 @@ static int pmt_processor(mpeg2ts_program_t *m2p, void *arg)
 
             if (ebpDescriptor == NULL)
             {
-               LOG_INFO_ARGS ("Starting EBP detection for PID: %d\n", pi->es_info->elementary_PID);
+               LOG_INFO_ARGS ("Starting EBP detection for PID: %d", pi->es_info->elementary_PID);
                vqarray_add(g_unfinishedPIDs, (vqarray_elem_t *)pi->es_info->elementary_PID);
             }
             else
             {
-               LOG_INFO_ARGS ("EBP Descriptor present -- no EBP detection necessary for PID: %d\n", pi->es_info->elementary_PID);
+               LOG_INFO_ARGS ("EBP Descriptor present -- no EBP detection necessary for PID: %d", pi->es_info->elementary_PID);
             }
 
             pes_demux_t *pd = pes_demux_new(handle_pes_packet);
@@ -455,9 +518,10 @@ static int pmt_processor(mpeg2ts_program_t *m2p, void *arg)
    return 1;
 }
 
+
 static int pat_processor(mpeg2ts_stream_t *m2s, void *arg)
 {
-   LOG_DEBUG ("pat_processor");
+   LOG_INFO_ARGS ("pat_processor: %d", vqarray_length(m2s->programs));
    g_bPATFound = 1;
 
    for (int i = 0; i < vqarray_length(m2s->programs); i++)
@@ -480,7 +544,7 @@ int prereadFiles(int numFiles, char **fileNames, program_stream_info_t *programS
 
    for (int i=0; i<numFiles; i++)
    {
-      printf ("\n");
+      LOG_INFO ("\n");
       LOG_INFO_ARGS ("Main:prereadFiles: FilePath %d = %s", i, fileNames[i]); 
 
       // reset PAT/PMT read flags
@@ -528,9 +592,12 @@ int prereadFiles(int numFiles, char **fileNames, program_stream_info_t *programS
       m2s->arg = &(programStreamInfo[i]);
       m2s->arg_destructor = NULL;
 
+      uint32_t num_packets_total = 0;
+
       while (!(g_bPATFound && g_bPMTFound && g_bEBPSearchEnded) && 
          (num_packets = fread(ts_buf, TS_SIZE, 4096, infile)) > 0)
       {
+         num_packets_total += num_packets;
          for (int i = 0; i < num_packets; i++)
          {
             ts_packet_t *ts = ts_new();
@@ -545,6 +612,7 @@ int prereadFiles(int numFiles, char **fileNames, program_stream_info_t *programS
             }
          }
       }
+      LOG_INFO_ARGS ("Main:prereadFiles: num packets read: %d", num_packets_total);
 
       mpeg2ts_stream_free(m2s);
 
@@ -566,7 +634,7 @@ int prereadIngestStreams(int numIngestStreams, circular_buffer_t **ingestBuffers
 
    for (int i=0; i<numIngestStreams; i++)
    {
-      printf ("\n");
+      LOG_INFO ("\n");
       LOG_INFO_ARGS ("Main:prereadIngestStreams: IngestStream %d", i); 
 
       // reset PAT/PMT read flags
@@ -1043,7 +1111,8 @@ int setupQueues(int numIngests, program_stream_info_t *programStreamInfo,
 }
 
 int startSocketReceiveThreads (int numIngestStreams, char **mcastAddrs, circular_buffer_t **ingestBuffers,
-   pthread_t ***socketReceiveThreads, pthread_attr_t *threadAttr, ebp_socket_receive_thread_params_t ***ebpSocketReceiveThreadParams)
+   pthread_t ***socketReceiveThreads, pthread_attr_t *threadAttr, ebp_socket_receive_thread_params_t ***ebpSocketReceiveThreadParams,
+   int enableStreamDump)
 {
    int returnCode = 0;
 
@@ -1072,7 +1141,7 @@ int startSocketReceiveThreads (int numIngestStreams, char **mcastAddrs, circular
       (*ebpSocketReceiveThreadParams)[threadIndex]->cb = ingestBuffers[threadIndex];
       (*ebpSocketReceiveThreadParams)[threadIndex]->ipAddr = ip;
       (*ebpSocketReceiveThreadParams)[threadIndex]->port = port;
-      (*ebpSocketReceiveThreadParams)[threadIndex]->streamLogFile = NULL;  // GORP
+      (*ebpSocketReceiveThreadParams)[threadIndex]->enableStreamDump = enableStreamDump;
 
       (*socketReceiveThreads)[threadIndex] = (pthread_t *)malloc (sizeof (pthread_t));
       pthread_t *socketThread = (*socketReceiveThreads)[threadIndex];
@@ -1186,6 +1255,7 @@ int startThreads_FileIngest(int numFiles, int totalNumStreams, ebp_stream_info_t
       ebpFileIngestThreadParams->ebpIngestThreadParams->allStreamInfos = streamInfoArray;
       ebpFileIngestThreadParams->filePath = fileNames[threadIndex];
       ebpFileIngestThreadParams->ebpIngestThreadParams->ingestPassFail = &(filePassFails[threadIndex]);
+
 
       (*fileIngestThreads)[threadIndex] = (pthread_t *)malloc (sizeof (pthread_t));
       pthread_t *fileIngestThread = (*fileIngestThreads)[threadIndex];
@@ -1376,6 +1446,12 @@ void analyzeResults(int numIngests, int numStreams, ebp_stream_info_t **streamIn
       {
          int arrayIndex = get2DArrayIndex (i, j, numStreams);
          ebp_stream_info_t *streamInfo = streamInfoArray[arrayIndex];
+         if (streamInfo == NULL)
+         {
+            // if stream is absent from this file
+            continue;
+         }
+
          overallPassFail &= streamInfo->streamPassFail;
       }
 
@@ -1451,24 +1527,29 @@ int main(int argc, char** argv)
     
    int c;
    int long_options_index; 
+   int enableStreamDump = 0;
 
    int peekFlag = 0;
    int fileFlag = 0;
    int streamFlag = 0;
 
-   while ((c = getopt_long(argc, argv, "fspt:h", long_options, &long_options_index)) != -1) 
+   while ((c = getopt_long(argc, argv, "fmpdt:h", long_options, &long_options_index)) != -1) 
    {
        switch (c) 
        {
          case 'f':
             fileFlag = 1; 
             break;        
-         case 's':
+         case 'm':
             streamFlag = 1; 
             break;        
          case 'p':
             peekFlag = 1; 
-            break;        
+            break;
+         case 'd':
+            enableStreamDump = 1;
+            LOG_INFO ("Stream dump enabled");
+            break;
          case 't':
             if(optarg != NULL) 
             {
@@ -1497,6 +1578,7 @@ int main(int argc, char** argv)
    {
       printf ("ERROR opening log file\n");
    }
+  
    
 
    if (fileFlag && streamFlag)
@@ -1522,7 +1604,7 @@ int main(int argc, char** argv)
    }
    else if (streamFlag)
    {
-      runStreamIngestMode(numFiles, &argv[optind], peekFlag);
+      runStreamIngestMode(numFiles, &argv[optind], peekFlag, enableStreamDump);
    }
 
    reportCleanup();
@@ -1534,7 +1616,7 @@ int main(int argc, char** argv)
    return 0;
 }
 
-void runStreamIngestMode(int numIngestStreams, char **ingestAddrs, int peekFlag)
+void runStreamIngestMode(int numIngestStreams, char **ingestAddrs, int peekFlag, int enableStreamDump)
 {
    int returnCode = 0;
 
@@ -1565,7 +1647,7 @@ void runStreamIngestMode(int numIngestStreams, char **ingestAddrs, int peekFlag)
    pthread_attr_t threadAttr1;
    ebp_socket_receive_thread_params_t **ebpSocketReceiveThreadParams;
    returnCode = startSocketReceiveThreads (numIngestStreams, ingestAddrs, ingestBuffers, &socketReceiveThreads, 
-      &threadAttr1, &ebpSocketReceiveThreadParams);
+      &threadAttr1, &ebpSocketReceiveThreadParams, enableStreamDump);
    if (returnCode != 0)
    {
       LOG_ERROR ("runStreamIngestMode: FATAL ERROR during startSocketReceiveThreads for preread: exiting"); 
@@ -1634,7 +1716,8 @@ void runStreamIngestMode(int numIngestStreams, char **ingestAddrs, int peekFlag)
       else if (myChar == 'r')
       {
          printf ("Printing report...\n");
-         char *reportPath = reportPrint(numIngestStreams, numStreamsPerIngest, streamInfoArray, ingestAddrs);
+         char *reportPath = reportPrint(numIngestStreams, numStreamsPerIngest, streamInfoArray, ingestAddrs, ingestPassFails);
+//   analyzeResults(numIngestStreams, numStreamsPerIngest, streamInfoArray, ingestAddrs, ingestPassFails);
          if (reportPath == NULL)
          {
             printf ("Report generation FAILED!\n");
@@ -1648,8 +1731,7 @@ void runStreamIngestMode(int numIngestStreams, char **ingestAddrs, int peekFlag)
       else if (myChar == 'c')
       {
          printf ("Clearing report data...\n");
-         reportClearData();
-         // GORP: reset stream pass/fails too
+         reportClearData(numIngestStreams, numStreamsPerIngest, streamInfoArray, ingestPassFails);
       }
       else
       {

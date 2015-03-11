@@ -45,7 +45,7 @@ static char options[] =
 static void usage() 
 { 
     fprintf(stderr, "\nATSStreamApp\n"); 
-    fprintf(stderr, "\nUsage: \nATSStreamApp [options] <inputfile1>,<destinationIP1>:<destinationPort1>,<packetsPerSec1> <inputfile2>,<destinationIP2>:<destinationPort2>,<packetsPerSec2> ... <inputfileN>,<destinationIPN>:<destinationPortN>,<packetsPerSecN>\n\nOptions:\n%s\n", options);
+    fprintf(stderr, "\nUsage: \nATSStreamApp [options] <inputfile1>,<destinationIP1>:<destinationPort1>,<TSPacketsPerSec1> <inputfile2>,<destinationIP2>:<destinationPort2>,<TSPacketsPerSec2> ... <inputfileN>,<destinationIPN>:<destinationPortN>,<TSPacketsPerSecN>\n\nOptions:\n%s\n", options);
 }
 
 typedef struct

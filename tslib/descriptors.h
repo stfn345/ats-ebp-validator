@@ -173,6 +173,7 @@ typedef struct {
    uint8_t language_flag;
    uint8_t language_flag_2;
 	char language[4];
+	char language_2[4];
 
 } ac3_descriptor_t;
 
