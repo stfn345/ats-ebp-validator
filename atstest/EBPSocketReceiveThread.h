@@ -30,6 +30,7 @@ typedef struct
     int enableStreamDump;
 
     int stopFlag;
+    unsigned int receivedBytes;
 
 } ebp_socket_receive_thread_params_t;
 

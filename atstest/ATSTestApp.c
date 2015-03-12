@@ -1277,7 +1277,8 @@ int startThreads_FileIngest(int numFiles, int totalNumStreams, ebp_stream_info_t
   
 int startThreads_StreamIngest(int numIngestStreams, int totalNumStreams, ebp_stream_info_t **streamInfoArray, 
    circular_buffer_t **ingestBuffers,
-   int *filePassFails, pthread_t ***streamIngestThreads, pthread_t ***analysisThreads, pthread_attr_t *threadAttr)
+   int *filePassFails, pthread_t ***streamIngestThreads, pthread_t ***analysisThreads, pthread_attr_t *threadAttr,
+   ebp_stream_ingest_thread_params_t ***ebpStreamIngestThreadParamsOut)
 {
    LOG_INFO ("Main:startThreads_StreamIngest: entering");
 
@@ -1292,6 +1293,7 @@ int startThreads_StreamIngest(int numIngestStreams, int totalNumStreams, ebp_str
 
    // start analyzer threads
    *analysisThreads = (pthread_t **) calloc (totalNumStreams, sizeof(pthread_t*));
+
    for (int threadIndex = 0; threadIndex < totalNumStreams; threadIndex++)
    {
       // this is freed by the analysis thread when it exits
@@ -1325,6 +1327,8 @@ int startThreads_StreamIngest(int numIngestStreams, int totalNumStreams, ebp_str
 
    // start the file ingest threads
    *streamIngestThreads = (pthread_t **) calloc (numIngestStreams, sizeof(pthread_t*));
+   *ebpStreamIngestThreadParamsOut = (ebp_stream_ingest_thread_params_t **) calloc (numIngestStreams, 
+      sizeof (ebp_stream_ingest_thread_params_t *));
    for (int threadIndex = 0; threadIndex < numIngestStreams; threadIndex++)
    {
       int arrayIndex = get2DArrayIndex (threadIndex, 0, totalNumStreams);
@@ -1339,6 +1343,8 @@ int startThreads_StreamIngest(int numIngestStreams, int totalNumStreams, ebp_str
       ebpStreamIngestThreadParams->ebpIngestThreadParams->allStreamInfos = streamInfoArray;
       ebpStreamIngestThreadParams->cb = ingestBuffers[threadIndex];
       ebpStreamIngestThreadParams->ebpIngestThreadParams->ingestPassFail = &(filePassFails[threadIndex]);
+
+      (*ebpStreamIngestThreadParamsOut)[threadIndex] = ebpStreamIngestThreadParams;
 
       (*streamIngestThreads)[threadIndex] = (pthread_t *)malloc (sizeof (pthread_t));
       pthread_t *streamIngestThread = (*streamIngestThreads)[threadIndex];
@@ -1573,11 +1579,14 @@ int main(int argc, char** argv)
        }
    }
 
-   int nReturn = set_log_file("C:\\Cablelabs\\EBP_Validator\\ats-ebp-validator\\atstest\\test_log.txt");
+   
+   int nReturn = set_log_file("C:\\Cablelabs\\EBP_Validator\\ats-ebp-validator\\atstest\\EBPTestLog.txt");
    if (nReturn != 0)
    {
       printf ("ERROR opening log file\n");
    }
+   
+   
   
    
 
@@ -1683,9 +1692,10 @@ void runStreamIngestMode(int numIngestStreams, char **ingestAddrs, int peekFlag,
    pthread_t **streamIngestThreads;
    pthread_t **analysisThreads;
    pthread_attr_t threadAttr;
+   ebp_stream_ingest_thread_params_t **ebpStreamIngestThreadParams = NULL;
 
    returnCode = startThreads_StreamIngest(numIngestStreams, numStreamsPerIngest, streamInfoArray, ingestBuffers,
-      ingestPassFails, &streamIngestThreads, &analysisThreads, &threadAttr);
+      ingestPassFails, &streamIngestThreads, &analysisThreads, &threadAttr, &ebpStreamIngestThreadParams);
    if (returnCode != 0)
    {
       LOG_ERROR ("runStreamIngestMode: FATAL ERROR during startThreads: exiting"); 
@@ -1701,6 +1711,7 @@ void runStreamIngestMode(int numIngestStreams, char **ingestAddrs, int peekFlag,
       printf ("    x then return to exit\n");
       printf ("    r then return to create report\n");
       printf ("    c then return to clear report data\n");
+      printf ("    s then return to see a status of the incoming streams\n");
       printf ("Entry: ");
 
       int myChar = getchar();
@@ -1717,7 +1728,6 @@ void runStreamIngestMode(int numIngestStreams, char **ingestAddrs, int peekFlag,
       {
          printf ("Printing report...\n");
          char *reportPath = reportPrint(numIngestStreams, numStreamsPerIngest, streamInfoArray, ingestAddrs, ingestPassFails);
-//   analyzeResults(numIngestStreams, numStreamsPerIngest, streamInfoArray, ingestAddrs, ingestPassFails);
          if (reportPath == NULL)
          {
             printf ("Report generation FAILED!\n");
@@ -1732,6 +1742,11 @@ void runStreamIngestMode(int numIngestStreams, char **ingestAddrs, int peekFlag,
       {
          printf ("Clearing report data...\n");
          reportClearData(numIngestStreams, numStreamsPerIngest, streamInfoArray, ingestPassFails);
+      }
+      else if (myChar == 's')
+      {
+         // print ingest status
+         printIngestStatus (ebpSocketReceiveThreadParams, numIngestStreams, numStreamsPerIngest, streamInfoArray);
       }
       else
       {
@@ -2096,4 +2111,36 @@ void populateProgramStreamInfo(program_stream_info_t *programStreamInfo, mpeg2ts
          LOG_INFO_ARGS ("Language = %s", programStreamInfo->language[j]);
       }
    }
+}
+
+void printIngestStatus (ebp_socket_receive_thread_params_t **ebpSocketReceiveThreadParams, int numIngestStreams, int numStreams,
+                        ebp_stream_info_t **streamInfoArray)
+{
+   printf ("\nIngest Stream Status:\n");
+   for (int i=0; i<numIngestStreams; i++)
+   {
+      printf ("   Ingest %d (%u.%u.%u.%u:%u): ReceivedBytes = %d, Buffered Bytes = %d/%d\n",
+         i, (unsigned int) ((ebpSocketReceiveThreadParams[i])->ipAddr >> 24),
+         (unsigned int) ((ebpSocketReceiveThreadParams[i]->ipAddr >> 16) & 0x0FF), 
+         (unsigned int) ((ebpSocketReceiveThreadParams[i]->ipAddr >> 8) & 0x0FF), 
+         (unsigned int) ((ebpSocketReceiveThreadParams[i]->ipAddr) & 0x0FF), 
+         ebpSocketReceiveThreadParams[i]->port,
+         ebpSocketReceiveThreadParams[i]->receivedBytes, cb_read_size (ebpSocketReceiveThreadParams[i]->cb),
+         cb_get_total_size (ebpSocketReceiveThreadParams[i]->cb));
+   }
+   printf ("\n");
+
+   printf ("\nEBP Processing Status:\n");
+   for (int ingestIndex=0; ingestIndex < numIngestStreams; ingestIndex++)
+   {
+      for (int streamIndex=0; streamIndex < numStreams; streamIndex++)
+      {
+         int arrayIndex = get2DArrayIndex (ingestIndex, streamIndex, numStreams);
+         ebp_stream_info_t *streamInfo = streamInfoArray[arrayIndex];
+
+         printf ("Ingest %d, Stream %d (PID = %d): EBP detected = %d, EBP processed = %d\n", 
+            ingestIndex, streamIndex, streamInfo->PID, streamInfo->fifo->push_counter, streamInfo->fifo->pop_counter);
+      }
+   }
+   printf ("\n");
 }

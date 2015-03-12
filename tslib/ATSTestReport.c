@@ -32,6 +32,11 @@ static varray_t* g_listBPInfos;
 static varray_t* g_listErrorMsgs;
 static varray_t* g_listInfoMsgs;
 
+int reportGet2DArrayIndex (int fileIndex, int streamIndex, int numStreams)
+{
+   return fileIndex * numStreams + streamIndex;
+}
+
 
 void reportInit()
 {
@@ -40,7 +45,7 @@ void reportInit()
    g_listInfoMsgs = varray_new();
 }
 
-void reportClearData()
+void reportClearData(int numIngests, int numStreams, ebp_stream_info_t **streamInfoArray, int *filePassFails)
 {
    // walk list of PTS and free each, then empty list
    for (int i=0; i<varray_length(g_listBPInfos); i++)
@@ -65,11 +70,30 @@ void reportClearData()
       free (tmp);
    }
    varray_clear(g_listErrorMsgs);
+
+   // clear pass/fail flags
+   for (int i=0; i<numIngests; i++)
+   {
+      filePassFails[i] = 1;
+      for (int j=0; j<numStreams; j++)
+      {
+         int arrayIndex = reportGet2DArrayIndex (i, j, numStreams);
+         ebp_stream_info_t *streamInfo = streamInfoArray[arrayIndex];
+
+         if (streamInfo == NULL)
+         {
+            // if stream is absent from this file
+            continue;
+         }
+
+         streamInfo->streamPassFail = 1;
+      }
+   }
 }
 
 void reportCleanup()
 {
-   reportClearData();
+   reportClearData(0, 0, NULL, NULL);
    varray_free(g_listBPInfos);
    varray_free(g_listErrorMsgs);
    varray_free(g_listInfoMsgs);
@@ -101,10 +125,8 @@ void reportAddErrorLog (char *errorMsg)
    varray_add(g_listErrorMsgs, temp);
 }
 
-char *reportPrint(int numIngests, int numStreams, ebp_stream_info_t **streamInfoArray, char **ingestNames)
+char *reportPrint(int numIngests, int numStreams, ebp_stream_info_t **streamInfoArray, char **ingestNames, int *filePassFails)
 {
-   // GORP: add overall pass/fail
-
    char reportPath[2048];
    if (getcwd(reportPath, 1024) == NULL)
    {
@@ -157,6 +179,52 @@ char *reportPrint(int numIngests, int numStreams, ebp_stream_info_t **streamInfo
    }
 
 
+   fprintf (myFile, "\n");
+   fprintf (myFile, "\n");
+   fprintf (myFile, "TEST RESULTS\n");
+   fprintf (myFile, "\n");
+
+   for (int i=0; i<numIngests; i++)
+   {
+      fprintf (myFile, "Input %s\n", ingestNames[i]);
+      int overallPassFail = filePassFails[i];
+      for (int j=0; j<numStreams; j++)
+      {
+         int arrayIndex = reportGet2DArrayIndex (i, j, numStreams);
+         ebp_stream_info_t *streamInfo = streamInfoArray[arrayIndex];
+         if (streamInfo == NULL)
+         {
+            // if stream is absent from this file
+            continue;
+         }
+
+         overallPassFail &= streamInfo->streamPassFail;
+      }
+
+      fprintf (myFile, "   Overall PassFail Result: %s\n", (overallPassFail?"PASS":"FAIL"));
+      fprintf (myFile, "   Stream PassFail Results:\n");
+      for (int j=0; j<numStreams; j++)
+      {
+         int arrayIndex = reportGet2DArrayIndex (i, j, numStreams);
+         ebp_stream_info_t *streamInfo = streamInfoArray[arrayIndex];
+
+         if (streamInfo == NULL)
+         {
+            // if stream is absent from this file
+            continue;
+         }
+
+         fprintf (myFile, "      PID %d (%s): %s\n", streamInfo->PID, (streamInfo->isVideo?"VIDEO":"AUDIO"),
+            (streamInfo->streamPassFail?"PASS":"FAIL"));
+
+         reportPrintBoundaryInfoArray(myFile, streamInfo->ebpBoundaryInfo);
+      }
+      fprintf (myFile, "\n");
+   }
+
+   fprintf (myFile, "TEST RESULTS END\n");
+
+   fprintf (myFile, "\n");
    fclose (myFile);
 
 
@@ -237,9 +305,6 @@ void reportPrintStreamInfo(FILE *reportFile, int numIngests, int numStreams, ebp
          reportPrintBoundaryInfoArray(reportFile, streamInfo->ebpBoundaryInfo);
       }
       fprintf (reportFile, "\n");
-
    }
-
-   fprintf (reportFile, "\n");
 }
 

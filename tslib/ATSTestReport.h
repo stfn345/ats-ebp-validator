@@ -41,10 +41,10 @@ void reportAddErrorLogArgs (const char *fmt, ...);
 void reportAddInfoLog (char *infoMsg);
 void reportAddInfoLogArgs (const char *fmt, ...);
 
-void reportClearData();
+void reportClearData(int numIngests, int numStreams, ebp_stream_info_t **streamInfoArray, int *filePassFails);
 void reportInit();
 void reportCleanup();
-char *reportPrint(int numIngests, int numStreams, ebp_stream_info_t **streamInfoArray, char **ingestNames);
+char *reportPrint(int numIngests, int numStreams, ebp_stream_info_t **streamInfoArray, char **ingestNames, int *filePassFails);
 
 void reportPrintBoundaryInfoArray(FILE *reportFile, ebp_boundary_info_t *boundaryInfoArray);
 void reportPrintStreamInfo(FILE *reportFile, int numIngests, int numStreams, ebp_stream_info_t **streamInfoArray, char **ingestNames);

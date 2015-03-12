@@ -368,6 +368,11 @@ int cb_available_write_size (circular_buffer_t *cb)
    return cb->bufSz - cb_read_size (cb);
 }
 
+int cb_get_total_size (circular_buffer_t *cb)
+{
+   return cb->bufSz;
+}
+
 int cb_read_size_internal (circular_buffer_t *cb)
 {
    // WARNING: THIS FUNCTION DOES NOT LOCK THE MUTEX AND SHOULD ONLY

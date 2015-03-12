@@ -45,6 +45,7 @@ void cb_free (circular_buffer_t *cb);
 void cb_empty (circular_buffer_t *cb);
 int cb_disable (circular_buffer_t *cb);
 int cb_is_disabled (circular_buffer_t *cb);
+int cb_get_total_size (circular_buffer_t *cb);
 
 int cb_peek (circular_buffer_t *cb, uint8_t* bytes, int bytesSz);
 int cb_read (circular_buffer_t *cb, uint8_t* bytes, int bytesSz);

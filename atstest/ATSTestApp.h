@@ -69,7 +69,8 @@ int parseMulticastAddrArg (char *inputArg, unsigned long *pIP, unsigned short *p
 int startThreads_FileIngest(int numFiles, int totalNumStreams, ebp_stream_info_t **streamInfoArray, char **fileNames,
    int *filePassFails, pthread_t ***fileIngestThreads, pthread_t ***analysisThreads, pthread_attr_t *threadAttr);
 int startThreads_StreamIngest(int numIngestStreams, int totalNumStreams, ebp_stream_info_t **streamInfoArray, circular_buffer_t **ingestBuffers,
-   int *filePassFails, pthread_t ***streamIngestThreads, pthread_t ***analysisThreads, pthread_attr_t *threadAttr);
+   int *filePassFails, pthread_t ***streamIngestThreads, pthread_t ***analysisThreads, pthread_attr_t *threadAttr,
+   ebp_stream_ingest_thread_params_t ***ebpStreamIngestThreadParamsOut);
 
 int startSocketReceiveThreads (int numIngestStreams, char **mcastAddrs, circular_buffer_t **ingestBuffers,
    pthread_t ***socketReceiveThreads, pthread_attr_t *threadAttr, ebp_socket_receive_thread_params_t ***ebpSocketReceiveThreadParams,
@@ -89,6 +90,9 @@ void aphabetizeStringArray(char **stringArray, int stringArraySz);
 
 int getFileWithVideoPID(program_stream_info_t *programStreamInfo, int numFiles, uint32_t PID, 
                         int *fileIndexWithPID);
+
+void printIngestStatus (ebp_socket_receive_thread_params_t **ebpSocketReceiveThreadParams, int numIngestStreams, int numStreams,
+                        ebp_stream_info_t **streamInfoArray);
 
 
 #endif // __H_ATSTESTAPP_767JKS

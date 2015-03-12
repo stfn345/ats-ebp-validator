@@ -107,7 +107,7 @@ void *EBPStreamIngestThreadProc(void *threadParams)
          // GORP: error checking here: need to augment mpeg2ts_stream_read_ts_packet's error checking
       }
 
-      LOG_INFO_ARGS ("total_packets = %d", total_packets);
+//      LOG_INFO_ARGS ("total_packets = %d", total_packets);
    }
 
    mpeg2ts_stream_free(m2s);
