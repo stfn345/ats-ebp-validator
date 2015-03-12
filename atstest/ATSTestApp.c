@@ -67,8 +67,8 @@ static char options[] =
 static void usage() 
 { 
     fprintf(stderr, "\nATSTestApp\n"); 
-    fprintf(stderr, "\nUsage: \nnATSTestApp [options] <input file 1> <input file 2> ... <input file N>\n\nOptions:\n%s\n", options);
-    fprintf(stderr, "\nUsage: \nnATSTestApp [options] <ip1>:<port1> <ip2>:<port2> ... <ipN>:<portN> \n\nOptions:\n%s\n", options);
+    fprintf(stderr, "\nUsage: \nATSTestApp [options] <input file 1> <input file 2> ... <input file N>\n\nOptions:\n%s\n", options);
+    fprintf(stderr, "\nUsage: \nATSTestApp [options] [<source1>@]<ip1>:<port1> [<source2>@]<ip2>:<port2> ... [<sourceN>@]<ipN>:<portN> \n\nOptions:\n%s\n", options);
     fprintf(stderr, "\n\nOption Information:\n");
     fprintf(stderr, "file: read transport stream from file\n");
     fprintf(stderr, "mcast: read transport steam from multicast\n");
@@ -78,20 +78,8 @@ static void usage()
     fprintf(stderr, "help: display help options\n");
 }
 
-int parseMulticastAddrArg (char *inputArgIn, unsigned long *pIP, unsigned short *pPort)
+static unsigned long ipStr2long(char *ipString)
 {
-   // input args are of the form "filepath,IPAddr:port"
-
-   char inputArg[100];
-   strcpy (inputArg, inputArgIn);
-
-   char *ipString = strtok (inputArg, ":");
-   char *portString = strtok (NULL, ":");
-
-//   printf ("filePath = %s\n", *ppFilePath);
-//   printf ("ipString = %s\n", ipString);
-//   printf ("portString = %s\n", portString);
-
    char *tempStr1 = strtok (ipString, ".");
    char *tempStr2 = strtok (NULL, ".");
    char *tempStr3 = strtok (NULL, ".");
@@ -102,14 +90,41 @@ int parseMulticastAddrArg (char *inputArgIn, unsigned long *pIP, unsigned short 
    unsigned char temp3 = (unsigned char) strtoul (tempStr3, NULL, 10);
    unsigned char temp4 = (unsigned char) strtoul (tempStr4, NULL, 10);
 
-   *pIP = temp1;
-   *pIP = (*pIP)<<8;
-   *pIP = (*pIP) | temp2;
-   *pIP = (*pIP)<<8;
-   *pIP = (*pIP) | temp3;
-   *pIP = (*pIP)<<8;
-   *pIP = (*pIP) | temp4;
+   unsigned long ip = temp1;
+   ip = (ip)<<8;
+   ip = (ip) | temp2;
+   ip = (ip)<<8;
+   ip = (ip) | temp3;
+   ip = (ip)<<8;
+   ip = (ip) | temp4;
 
+   return ip;
+}
+
+int parseMulticastAddrArg (char *inputArgIn, unsigned long *pIP, unsigned long *psrcIP, unsigned short *pPort)
+{
+   // input args are of the form "filepath,IPAddr:port"
+
+   char inputArg[100];
+   strcpy (inputArg, inputArgIn);
+
+   char *ipString;
+   if (strchr(inputArg, '@') != NULL)
+   {
+      char *srcipString = strtok (inputArg, "@");
+      char *mcastString = strtok (NULL, "@");
+      *psrcIP = ipStr2long (srcipString);
+      ipString = strtok (mcastString, ":");
+   }
+   else
+   {
+      *psrcIP = 0;
+      ipString = strtok (inputArg, ":");
+   }
+
+   char *portString = strtok (NULL, ":");
+
+   *pIP = ipStr2long(ipString);
    *pPort = (unsigned short) strtoul (portString, NULL, 10);
 
 //   printf ("DestIP = 0x%x\n", (unsigned int)(*pDestIP));
@@ -1127,8 +1142,9 @@ int startSocketReceiveThreads (int numIngestStreams, char **mcastAddrs, circular
    for (int threadIndex = 0; threadIndex < numIngestStreams; threadIndex++)
    {
       unsigned long ip;
+      unsigned long srcip;
       unsigned short port;
-      returnCode = parseMulticastAddrArg (mcastAddrs[threadIndex], &ip, &port);
+      returnCode = parseMulticastAddrArg (mcastAddrs[threadIndex], &ip, &srcip, &port);
       if (returnCode < 0)
       {
          LOG_ERROR_ARGS("Main:startSocketReceiveThreads: FAIL: error parsing multicast arg %s", mcastAddrs[threadIndex]);
@@ -1140,6 +1156,7 @@ int startSocketReceiveThreads (int numIngestStreams, char **mcastAddrs, circular
       (*ebpSocketReceiveThreadParams)[threadIndex]->threadNum = 500 + threadIndex;
       (*ebpSocketReceiveThreadParams)[threadIndex]->cb = ingestBuffers[threadIndex];
       (*ebpSocketReceiveThreadParams)[threadIndex]->ipAddr = ip;
+      (*ebpSocketReceiveThreadParams)[threadIndex]->srcipAddr = srcip;
       (*ebpSocketReceiveThreadParams)[threadIndex]->port = port;
       (*ebpSocketReceiveThreadParams)[threadIndex]->enableStreamDump = enableStreamDump;
 

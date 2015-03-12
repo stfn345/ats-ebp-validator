@@ -40,7 +40,6 @@ static char *g_streamDumpBaseName = "EBPStreamDump";
 void *EBPSocketReceiveThreadProc(void *threadParams)
 {
    int returnCode = 0;
-   struct ip_mreq mreq;
 
    ebp_socket_receive_thread_params_t * ebpSocketReceiveThreadParams = (ebp_socket_receive_thread_params_t *)threadParams;
    LOG_INFO_ARGS("EBPSocketReceiveThread %d starting...ebpSocketReceiveThreadParams->port = %d", 
@@ -109,16 +108,37 @@ void *EBPSocketReceiveThreadProc(void *threadParams)
 
    if (isMulticast)
    {
-      /* use setsockopt() to request that the kernel join a multicast group */
-      mreq.imr_multiaddr.s_addr=htonl(ebpSocketReceiveThreadParams->ipAddr);
-      mreq.imr_interface.s_addr=htonl(INADDR_ANY);
-      if (setsockopt(mySocket, IPPROTO_IP, IP_ADD_MEMBERSHIP, &mreq, sizeof(mreq)) < 0) 
+      if (ebpSocketReceiveThreadParams->srcipAddr != 0)
       {
-         LOG_ERROR_ARGS("EBPSocketReceiveThread %d: Error from setsockopt: %s", 
-            ebpSocketReceiveThreadParams->threadNum, strerror(errno));
-         reportAddErrorLogArgs("EBPSocketReceiveThread %d: Error from setsockopt: %s", 
-            ebpSocketReceiveThreadParams->threadNum, strerror(errno));
-         return NULL;
+         struct ip_mreq_source mreqsrc;
+
+         /* use setsockopt() to request that the kernel join a multicast group */
+         mreqsrc.imr_multiaddr.s_addr=htonl(ebpSocketReceiveThreadParams->ipAddr);
+         mreqsrc.imr_interface.s_addr=htonl(INADDR_ANY);
+         mreqsrc.imr_sourceaddr.s_addr=htonl(ebpSocketReceiveThreadParams->srcipAddr);
+         if (setsockopt(mySocket, IPPROTO_IP, IP_ADD_SOURCE_MEMBERSHIP, &mreqsrc, sizeof(mreqsrc)) < 0)
+         {
+            LOG_ERROR_ARGS("EBPSocketReceiveThread %d: Error from setsockopt: %s",
+               ebpSocketReceiveThreadParams->threadNum, strerror(errno));
+            reportAddErrorLogArgs("EBPSocketReceiveThread %d: Error from setsockopt: %s",
+               ebpSocketReceiveThreadParams->threadNum, strerror(errno));
+            return NULL;
+         }
+      }
+      else
+      {
+         struct ip_mreq mreq;
+         /* use setsockopt() to request that the kernel join a multicast group */
+         mreq.imr_multiaddr.s_addr=htonl(ebpSocketReceiveThreadParams->ipAddr);
+         mreq.imr_interface.s_addr=htonl(INADDR_ANY);
+         if (setsockopt(mySocket, IPPROTO_IP, IP_ADD_MEMBERSHIP, &mreq, sizeof(mreq)) < 0)
+         {
+            LOG_ERROR_ARGS("EBPSocketReceiveThread %d: Error from setsockopt: %s",
+               ebpSocketReceiveThreadParams->threadNum, strerror(errno));
+            reportAddErrorLogArgs("EBPSocketReceiveThread %d: Error from setsockopt: %s",
+               ebpSocketReceiveThreadParams->threadNum, strerror(errno));
+            return NULL;
+         }
       }
    }
 

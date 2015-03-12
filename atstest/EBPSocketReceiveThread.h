@@ -24,6 +24,7 @@ typedef struct
 {
     circular_buffer_t *cb;
     unsigned long ipAddr;
+    unsigned long srcipAddr;
     unsigned short port;
 
     int threadNum;

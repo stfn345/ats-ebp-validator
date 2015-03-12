@@ -64,7 +64,7 @@ int setupQueues(int numIngests, program_stream_info_t *programStreamInfo,
 void runFileIngestMode(int numFiles, char **filePaths, int peekFlag);
 void runStreamIngestMode(int numngestStreams, char **ingestAddrs, int peekFlag, int enableStreamDump);
 
-int parseMulticastAddrArg (char *inputArg, unsigned long *pIP, unsigned short *pPort);
+int parseMulticastAddrArg (char *inputArg, unsigned long *pIP, unsigned long *psrcIP, unsigned short *pPort);
 
 int startThreads_FileIngest(int numFiles, int totalNumStreams, ebp_stream_info_t **streamInfoArray, char **fileNames,
    int *filePassFails, pthread_t ***fileIngestThreads, pthread_t ***analysisThreads, pthread_attr_t *threadAttr);
