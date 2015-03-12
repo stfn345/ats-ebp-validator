@@ -1,6 +1,6 @@
 SHELL = /bin/sh
 
-SUBDIRS = atstest tslib libstructures h264bitstream logging
+SUBDIRS = atsstreamapp atstest tslib libstructures h264bitstream logging
 
 .PHONY: clean subdirs $(SUBDIRS)
 
@@ -26,6 +26,9 @@ tslib: libstructures h264bitstream logging
 	$(MAKE) -C $@
 
 atstest: tslib
+	$(MAKE) -C $@
+
+atsstreamapp: 
 	$(MAKE) -C $@
 
 clean: 
