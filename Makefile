@@ -28,7 +28,7 @@ tslib: libstructures h264bitstream logging
 atstest: tslib
 	$(MAKE) -C $@
 
-atsstreamapp: 
+atsstreamapp: logging tslib
 	$(MAKE) -C $@
 
 clean: 
