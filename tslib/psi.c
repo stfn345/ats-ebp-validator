@@ -37,6 +37,10 @@
 
 #include "ATSTestReport.h"
 
+static uint8_t *g_pmtBuffer = NULL;
+static size_t g_pmtBufferAllocSz = 0;
+static size_t g_pmtBufferUsedSz = 0;
+
 
 typedef struct {
    int type; 
@@ -292,12 +296,15 @@ int es_info_read(elementary_stream_info_t *es, bs_t *b)
    int es_info_start = bs_pos(b); 
    es->stream_type = bs_read_u8(b); 
    bs_skip_u(b, 3); 
-   es->elementary_PID = bs_read_u(b, 13); 
+   es->elementary_PID = bs_read_u(b, 13);
+
    bs_skip_u(b, 4); 
    es->ES_info_length = bs_read_u(b, 12); 
+   LOG_INFO_ARGS ("es_info_read: es_info_start = %d, bs_pos(b) = %d, b->end = %d", es_info_start, bs_pos(b), b->end - b->start);
+   LOG_INFO_ARGS ("es_info_read pre-return %d", bs_pos(b) - es_info_start);
    
-//   printf ("es_info_read: PID = %d, streamType = 0x%x, ES_info_length = %d.  Calling read_descriptor_loop\n", 
-//      es->elementary_PID, es->stream_type, es->ES_info_length);
+   LOG_INFO_ARGS ("es_info_read: PID = %d, streamType = 0x%x, ES_info_length = %d.  Calling read_descriptor_loop", 
+      es->elementary_PID, es->stream_type, es->ES_info_length);
    
    read_descriptor_loop(es->descriptors, b, es->ES_info_length); 
    if (es->ES_info_length > MAX_ES_INFO_LEN) 
@@ -310,6 +317,7 @@ int es_info_read(elementary_stream_info_t *es, bs_t *b)
       return 0;
    }
 
+   LOG_INFO_ARGS ("es_info_read returning %d", bs_pos(b) - es_info_start);
    return bs_pos(b) - es_info_start;
 }
 
@@ -369,36 +377,91 @@ void program_map_section_free(program_map_section_t *pms)
    free(pms);
 }
 
-int program_map_section_read(program_map_section_t *pms, uint8_t *buf, size_t buf_size) 
+void resetPMTBuffer()
+{
+   if (g_pmtBuffer != NULL)
+   {
+      free (g_pmtBuffer);
+      g_pmtBuffer = NULL;
+      g_pmtBufferAllocSz = 0;
+      g_pmtBufferUsedSz = 0;
+   }
+}
+
+int program_map_section_read(program_map_section_t *pms, uint8_t *buf, size_t buf_size, uint32_t payload_unit_start_indicator) 
 { 
+   LOG_DEBUG ("program_map_section_read -- entering");
    if (pms == NULL || buf == NULL) 
    {
       SAFE_REPORT_TS_ERR(-1); 
       return 0;
    }
- //  printf ("program_map_section_read\n");
-   
-   bs_t *b = bs_new(buf, buf_size); 
-   
+
+   bs_t *b = NULL;
+
+   if (!payload_unit_start_indicator &&  g_pmtBuffer == NULL)
+   {
+      // this TS packet is not start of table, and we have no cached table data
+      return 0;
+   }
+
+   if (payload_unit_start_indicator)
+   {
+      uint8_t payloadStartPtr = buf[0];
+      buf += (payloadStartPtr + 1);
+      buf_size -= (payloadStartPtr + 1);
+      LOG_DEBUG_ARGS ("program_map_section_read: payloadStartPtr = %d", payloadStartPtr);
+   }
+
+   // check for pmt spanning multiple TS packets
+   if (g_pmtBuffer != NULL)
+   {
+      LOG_DEBUG_ARGS ("program_map_section_read: g_pmtBuffer detected: g_pmtBufferAllocSz = %d, pmtBufferUsedSz = %d", g_pmtBufferAllocSz, g_pmtBufferUsedSz);
+      size_t numBytesToCopy = buf_size;
+      if (buf_size > (g_pmtBufferAllocSz - g_pmtBufferUsedSz))
+      {
+         numBytesToCopy = g_pmtBufferAllocSz - g_pmtBufferUsedSz;
+      }
+         
+      LOG_DEBUG_ARGS ("program_map_section_read: copying %d bytes to g_pmtBuffer", numBytesToCopy);
+      memcpy (g_pmtBuffer + g_pmtBufferUsedSz, buf, numBytesToCopy);
+      g_pmtBufferUsedSz += numBytesToCopy;
+      
+      if (g_pmtBufferUsedSz < g_pmtBufferAllocSz)
+      {
+         LOG_DEBUG ("program_map_section_read: g_pmtBuffer not yet full -- returning");
+         return 0;
+      }
+
+      b = bs_new(g_pmtBuffer, g_pmtBufferUsedSz);
+   }
+   else
+   {
+      b = bs_new(buf, buf_size);
+   }
+      
    pms->table_id = bs_read_u8(b); 
    if (pms->table_id != TS_program_map_section) 
    {
       LOG_ERROR_ARGS("Table ID in PMT is 0x%02X instead of expected 0x%02X", pms->table_id, TS_program_map_section); 
       reportAddErrorLogArgs("Table ID in PMT is 0x%02X instead of expected 0x%02X", pms->table_id, TS_program_map_section); 
-      SAFE_REPORT_TS_ERR(-40); 
+      SAFE_REPORT_TS_ERR(-40);
+      if (g_pmtBuffer != NULL) resetPMTBuffer();
       return 0;
    }
-   
+
    pms->section_syntax_indicator = bs_read_u1(b); 
    if (!pms->section_syntax_indicator) 
    {
       LOG_ERROR("section_syntax_indicator not set in PMT"); 
       reportAddErrorLog("section_syntax_indicator not set in PMT"); 
       SAFE_REPORT_TS_ERR(-41); 
+      if (g_pmtBuffer != NULL) resetPMTBuffer();
       return 0;
    }
    
    bs_skip_u(b, 3); 
+
    pms->section_length = bs_read_u(b, 12); 
    if (pms->section_length > MAX_SECTION_LEN) 
    {
@@ -407,9 +470,30 @@ int program_map_section_read(program_map_section_t *pms, uint8_t *buf, size_t bu
       reportAddErrorLogArgs("PMT section length is 0x%02X, larger than maximum allowed 0x%02X", 
                      pms->section_length, MAX_SECTION_LEN); 
       SAFE_REPORT_TS_ERR(-42); 
+      if (g_pmtBuffer != NULL) resetPMTBuffer();
       return 0;
    }
-   
+
+   if (pms->section_length > bs_bytes_left(b))
+   {
+      LOG_DEBUG ("program_map_section_read: Detected section spans more than one TS packet -- allocating buffer");
+
+      if (g_pmtBuffer != NULL)
+      {
+         // should never get here
+         LOG_ERROR ("program_map_section_read: unexpected pmtBufffer");
+         resetPMTBuffer();
+      }
+
+      g_pmtBufferAllocSz = pms->section_length + 3;
+      g_pmtBuffer = (uint8_t *)calloc (pms->section_length + 3, 1);
+      memcpy (g_pmtBuffer, buf, buf_size);
+      g_pmtBufferUsedSz = buf_size;
+
+      bs_free (b);
+      return 0;
+   }
+
    int section_start = bs_pos(b); 
    
    // bytes 0,1
@@ -429,6 +513,7 @@ int program_map_section_read(program_map_section_t *pms, uint8_t *buf, size_t bu
       LOG_ERROR("Multi-section PMT is not allowed/n"); 
       reportAddErrorLog("Multi-section PMT is not allowed/n"); 
       SAFE_REPORT_TS_ERR(-43); 
+      if (g_pmtBuffer != NULL) resetPMTBuffer();
       return 0;
    }
    
@@ -439,6 +524,7 @@ int program_map_section_read(program_map_section_t *pms, uint8_t *buf, size_t bu
       LOG_ERROR_ARGS("PCR PID has invalid value 0x%02X", pms->PCR_PID); 
       reportAddErrorLogArgs("PCR PID has invalid value 0x%02X", pms->PCR_PID); 
       SAFE_REPORT_TS_ERR(-44); 
+      if (g_pmtBuffer != NULL) resetPMTBuffer();
       return 0;
    }
  //  printf ("PCR PID = %d\n", pms->PCR_PID);
@@ -452,12 +538,13 @@ int program_map_section_read(program_map_section_t *pms, uint8_t *buf, size_t bu
       reportAddErrorLogArgs("PMT program info length is 0x%02X, larger than maximum allowed 0x%02X", 
                      pms->program_info_length, MAX_PROGRAM_INFO_LEN); 
       SAFE_REPORT_TS_ERR(-45); 
+      if (g_pmtBuffer != NULL) resetPMTBuffer();
       return 0;
    }
    
    read_descriptor_loop(pms->descriptors, b, pms->program_info_length); 
-   
-   while (pms->section_length - (bs_pos(b) - section_start) > 4) // account for CRC
+
+   while (!bs_eof(b) && pms->section_length - (bs_pos(b) - section_start) > 4) // account for CRC
    {
       elementary_stream_info_t *es = es_info_new();
       es_info_read(es, b); 
@@ -468,13 +555,14 @@ int program_map_section_read(program_map_section_t *pms, uint8_t *buf, size_t bu
    
    // check CRC
    crc_t pas_crc = crc_init(); 
-   pas_crc = crc_update(pas_crc, buf, bs_pos(b) - 4); 
+   pas_crc = crc_update(pas_crc, b->start, bs_pos(b) - 4); 
    pas_crc = crc_finalize(pas_crc); 
    if (pas_crc != pms->CRC_32) 
    {
       LOG_ERROR_ARGS("PMT CRC_32 specified as 0x%08X, but calculated as 0x%08X", pms->CRC_32, pas_crc); 
       reportAddErrorLogArgs("PMT CRC_32 specified as 0x%08X, but calculated as 0x%08X", pms->CRC_32, pas_crc); 
       SAFE_REPORT_TS_ERR(-46); 
+      if (g_pmtBuffer != NULL) resetPMTBuffer();
       return 0;
    } 
    else 
@@ -484,7 +572,9 @@ int program_map_section_read(program_map_section_t *pms, uint8_t *buf, size_t bu
    
    int bytes_read = bs_pos(b); 
    bs_free(b); 
-   
+
+   resetPMTBuffer();
+
    return bytes_read;
 }
 // int program_map_section_write(program_map_section_t *pms, uint8_t *buf, size_t buf_size);

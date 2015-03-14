@@ -439,8 +439,8 @@ static int pmt_processor(mpeg2ts_program_t *m2p, void *arg)
 //         printf ("elementary PID = %d\n", pi->es_info->elementary_PID);
          if (IS_SCTE35_STREAM(pi->es_info->stream_type))
          {
-            printf ("SCTE35: stream type = %d\n", pi->es_info->stream_type);
-            printf ("SCTE35: elementary PID = %d\n", pi->es_info->elementary_PID);
+            LOG_INFO_ARGS ("SCTE35: stream type = %d", pi->es_info->stream_type);
+            LOG_INFO_ARGS ("SCTE35: elementary PID = %d", pi->es_info->elementary_PID);
 
             pes_demux_t *pd = pes_demux_new(NULL);
             pd->pes_arg = arg;
@@ -539,14 +539,17 @@ static int pat_processor(mpeg2ts_stream_t *m2s, void *arg)
    LOG_INFO_ARGS ("pat_processor: %d", vqarray_length(m2s->programs));
    g_bPATFound = 1;
 
+   LOG_INFO ("pat_processor: GORP1");
    for (int i = 0; i < vqarray_length(m2s->programs); i++)
    {
       mpeg2ts_program_t *m2p = vqarray_get(m2s->programs, i);
+      LOG_INFO ("pat_processor: GORP2");
 
       if (m2p == NULL) continue;
       m2p->pmt_processor =  (pmt_processor_t)pmt_processor;
       m2p->arg = arg;
    }
+   LOG_INFO ("pat_processor: DONE");
    return 1;
 }
 
@@ -613,10 +616,12 @@ int prereadFiles(int numFiles, char **fileNames, program_stream_info_t *programS
          (num_packets = fread(ts_buf, TS_SIZE, 4096, infile)) > 0)
       {
          num_packets_total += num_packets;
+         LOG_INFO_ARGS ("total_packets = %d, num_packets = %d", num_packets_total, num_packets);
          for (int i = 0; i < num_packets; i++)
          {
             ts_packet_t *ts = ts_new();
             ts_read(ts, ts_buf + i * TS_SIZE, TS_SIZE);
+            LOG_DEBUG_ARGS ("Main:prereadFiles: processing packet: %d (PID %d)", i, ts->header.PID);
             mpeg2ts_stream_read_ts_packet(m2s, ts);
 
             // check if PAT/PMT read -- if so, break out
@@ -822,7 +827,7 @@ int getAudioPID(program_stream_info_t *programStreamInfo, char *languageIn, uint
             }
             else
             {
-               printf ("No match\n");
+               LOG_INFO ("No match");
             }
          }
          else
@@ -1596,17 +1601,12 @@ int main(int argc, char** argv)
        }
    }
 
-   
    int nReturn = set_log_file("C:\\Cablelabs\\EBP_Validator\\ats-ebp-validator\\atstest\\EBPTestLog.txt");
    if (nReturn != 0)
    {
-      printf ("ERROR opening log file\n");
+      LOG_INFO ("ERROR opening log file");
    }
    
-   
-  
-   
-
    if (fileFlag && streamFlag)
    {
       LOG_INFO ("Main: File (-f) and Stream (-s) cannot be specified simultaneously");

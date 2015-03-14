@@ -374,7 +374,7 @@ int mpeg2ts_stream_read_pat(mpeg2ts_stream_t *m2s, ts_packet_t *ts)
 
 int mpeg2ts_program_read_pmt(mpeg2ts_program_t *m2p, ts_packet_t *ts) 
 { 
-//   printf ("mpeg2ts_program_read_pmt\n");
+   LOG_INFO ("mpeg2ts_program_read_pmt");
    int ret = 0; 
    
    program_map_section_t *new_pms = program_map_section_new(); 
@@ -385,8 +385,12 @@ int mpeg2ts_program_read_pmt(mpeg2ts_program_t *m2p, ts_packet_t *ts)
       return ret;
    }
    
-   if (program_map_section_read(new_pms, ts->payload.bytes + 1, ts->payload.len - 1) == 0) 
+   // GORP: take account of payload_unit_start pointer
+   LOG_INFO_ARGS ("mpeg2ts_program_read_pmt -- 1: ts->payload.len = %d, adaptation_field_control = %d, payload_unit_start_indicator = %d", 
+      ts->payload.len, ts->header.adaptation_field_control, ts->header.payload_unit_start_indicator);
+   if (program_map_section_read(new_pms, ts->payload.bytes, ts->payload.len, ts->header.payload_unit_start_indicator) == 0) 
    {
+      LOG_INFO ("mpeg2ts_program_read_pmt returned 0");
       program_map_section_free(new_pms); 
       ts_free(ts);    
       return ret;
@@ -395,7 +399,6 @@ int mpeg2ts_program_read_pmt(mpeg2ts_program_t *m2p, ts_packet_t *ts)
 // FIXME: allow >1 packet PAT
 // we know that we have a complete new PAT
    int new_pmt_version = (m2p->pmt == NULL); 
-   
    
    // if we encounter a change in PAT, we'll use the next one
    if ((m2p->pmt != NULL)
@@ -484,7 +487,6 @@ int mpeg2ts_stream_read_ts_packet(mpeg2ts_stream_t *m2s, ts_packet_t *ts)
    if (ts->header.PID == CAT_PID)
        return mpeg2ts_stream_read_cat(m2s, ts); 
 
-
    if ( ts->header.PID == NULL_PID ) 
    {
       ts_free(ts);  
@@ -498,21 +500,24 @@ int mpeg2ts_stream_read_ts_packet(mpeg2ts_stream_t *m2s, ts_packet_t *ts)
       ts_free(ts);  
       return 0;    
    }
-   
+      
    pid_info_t *pi = NULL; 
    for (int i = 0; i < vqarray_length(m2s->programs) && (pi == NULL); i++) 
    {
       mpeg2ts_program_t* m2p = vqarray_get(m2s->programs, i);
       
       if (m2p == NULL)
+      {
           continue;
+      }
       
       if (m2p->PID == ts->header.PID)
       {
           return mpeg2ts_program_read_pmt(m2p, ts);  // got a PMT
       }
 
-      if (m2p->scte128_enabled) {
+      if (m2p->scte128_enabled) 
+      {
          ts_parse_scte128_af_private(&ts->adaptation_field);
       }
      

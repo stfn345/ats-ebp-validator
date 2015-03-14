@@ -99,7 +99,7 @@ void *EBPFileIngestThreadProc(void *threadParams)
    while ((num_packets = fread(ts_buf, TS_SIZE, 4096, infile)) > 0)
    {
       total_packets += num_packets;
-      LOG_DEBUG_ARGS ("total_packets = %d, num_packets = %d", total_packets, num_packets);
+      LOG_INFO_ARGS ("total_packets = %d, num_packets = %d", total_packets, num_packets);
       for (int i = 0; i < num_packets; i++)
       {
          ts_packet_t *ts = ts_new();

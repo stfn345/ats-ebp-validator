@@ -126,6 +126,7 @@ static void printBoundaryInfoArray(ebp_boundary_info_t *boundaryInfoArray)
 
 static int validate_pes_packet(pes_packet_t *pes, elementary_stream_info_t *esi, vqarray_t *ts_queue, void *arg)
 {
+   LOG_INFO("validate_pes_packet");
    // Get the first TS packet and check it for EBP
    ts_packet_t *first_ts = (ts_packet_t*)vqarray_get(ts_queue,0);
    if (first_ts == NULL)

@@ -154,7 +154,7 @@ void *EBPSocketReceiveThreadProc(void *threadParams)
 
    // open log file
    FILE *streamLogFileHandle = NULL;
-   printf ("In EBPSocketReceiveThreadProc: ebpSocketReceiveThreadParams->enableStreamDump = %d\n", ebpSocketReceiveThreadParams->enableStreamDump);
+   LOG_INFO_ARGS ("In EBPSocketReceiveThreadProc: ebpSocketReceiveThreadParams->enableStreamDump = %d", ebpSocketReceiveThreadParams->enableStreamDump);
    if (ebpSocketReceiveThreadParams->enableStreamDump)
    {
       printf ("Opening stream log file\n");

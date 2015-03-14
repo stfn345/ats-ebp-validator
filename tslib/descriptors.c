@@ -52,7 +52,7 @@ int register_descriptor(descriptor_table_entry_t *desc)
 // "factory methods"
 int read_descriptor_loop(vqarray_t *desc_list, bs_t *b, int length) 
 { 
-//   printf ("read_descriptor_loop: length = %d\n", length);
+   LOG_INFO_ARGS ("read_descriptor_loop: length = %d", length);
    int desc_start = bs_pos(b); 
    
    while (length > bs_pos(b) - desc_start) 
@@ -105,7 +105,7 @@ descriptor_t* descriptor_read(descriptor_t *desc, bs_t *b)
    desc->tag = bs_read_u8(b);
    desc->length = bs_read_u8(b);
 
-//   printf ("descriptor_read: tag = %d, length = %d\n", desc->tag, desc->length);
+   LOG_INFO_ARGS ("descriptor_read: tag = %d, length = %d", desc->tag, desc->length);
 /*   for (int i=0; i<desc->length; i++)
    {
       printf ("0x%x ", b->p[i]);
@@ -585,26 +585,26 @@ descriptor_t* ac3_descriptor_read(descriptor_t *desc, bs_t *b)
 
    if (remainingBytes == 0)
    {
-      printf ("AC3 (1) exiting\n");
+      LOG_INFO ("AC3 (1) exiting");
       free(desc); 
       return (descriptor_t *)ac3d;
    }
    else if (remainingBytes < 0)
    {
-      printf ("ERROR: AC3 (1) remaining bytes = %d\n", remainingBytes);
+      LOG_INFO_ARGS ("ERROR: AC3 (1) remaining bytes = %d", remainingBytes);
    }
 
    ac3d->langcod = bs_read_u8(b);
    remainingBytes--;
    if (remainingBytes == 0)
    {
-      printf ("AC3 (2) exiting\n");
+      LOG_INFO ("AC3 (2) exiting");
       free(desc); 
       return (descriptor_t *)ac3d;
    }
    else if (remainingBytes < 0)
    {
-      printf ("ERROR: AC3 (2) remaining bytes = %d\n", remainingBytes);
+      LOG_INFO_ARGS ("ERROR: AC3 (2) remaining bytes = %d", remainingBytes);
    }
 
    if (ac3d->num_channels==0)   
@@ -613,13 +613,13 @@ descriptor_t* ac3_descriptor_read(descriptor_t *desc, bs_t *b)
       remainingBytes--;
       if (remainingBytes == 0)
       {
-         printf ("AC3 (3) exiting\n");
+         LOG_INFO ("AC3 (3) exiting");
          free(desc); 
          return (descriptor_t *)ac3d;
       }
       else if (remainingBytes < 0)
       {
-         printf ("ERROR: AC3 (3) remaining bytes = %d\n", remainingBytes);
+         LOG_INFO_ARGS ("ERROR: AC3 (3) remaining bytes = %d", remainingBytes);
       }
    }
 
@@ -636,13 +636,13 @@ descriptor_t* ac3_descriptor_read(descriptor_t *desc, bs_t *b)
    remainingBytes--;
    if (remainingBytes == 0)
    {
-      printf ("AC3 (4) exiting\n");
+      LOG_INFO ("AC3 (4) exiting");
       free(desc); 
       return (descriptor_t *)ac3d;
    }
    else if (remainingBytes < 0)
    {
-      printf ("ERROR: AC3 (4) remaining bytes = %d\n", remainingBytes);
+      LOG_INFO_ARGS ("ERROR: AC3 (4) remaining bytes = %d", remainingBytes);
    }
 
 
@@ -657,13 +657,13 @@ descriptor_t* ac3_descriptor_read(descriptor_t *desc, bs_t *b)
    }
    if (remainingBytes == 0)
    {
-      printf ("AC3 (5) exiting\n");
+      LOG_INFO ("AC3 (5) exiting");
       free(desc); 
       return (descriptor_t *)ac3d;
    }
    else if (remainingBytes < 0)
    {
-      printf ("ERROR: AC3 (5) remaining bytes = %d\n", remainingBytes);
+      LOG_INFO_ARGS ("ERROR: AC3 (5) remaining bytes = %d", remainingBytes);
    }
 
 
@@ -673,13 +673,13 @@ descriptor_t* ac3_descriptor_read(descriptor_t *desc, bs_t *b)
    remainingBytes--;
    if (remainingBytes == 0)
    {
-      printf ("AC3 (6) exiting\n");
+      LOG_INFO ("AC3 (6) exiting");
       free(desc); 
       return (descriptor_t *)ac3d;
    }
    else if (remainingBytes < 0)
    {
-      printf ("ERROR: AC3 (6) remaining bytes = %d\n", remainingBytes);
+      LOG_INFO_ARGS ("ERROR: AC3 (6) remaining bytes = %d", remainingBytes);
    }
 
    if (ac3d->language_flag == 1)
@@ -691,14 +691,14 @@ descriptor_t* ac3_descriptor_read(descriptor_t *desc, bs_t *b)
       remainingBytes -= 3;
       if (remainingBytes == 0)
       {
-         printf ("AC3 (7) exiting\n");
+         LOG_INFO ("AC3 (7) exiting");
          free(desc); 
          return (descriptor_t *)ac3d;
       }
    }
    else if (remainingBytes < 0)
    {
-      printf ("ERROR: AC3 (7) remaining bytes = %d\n", remainingBytes);
+      LOG_INFO_ARGS ("ERROR: AC3 (7) remaining bytes = %d", remainingBytes);
    }
 
    if (ac3d->language_flag_2 == 1)
@@ -710,17 +710,17 @@ descriptor_t* ac3_descriptor_read(descriptor_t *desc, bs_t *b)
       remainingBytes -= 3;
       if (remainingBytes == 0)
       {
-         printf ("AC3 (8) exiting\n");
+         LOG_INFO ("AC3 (8) exiting");
          free(desc); 
          return (descriptor_t *)ac3d;
       }
       else if (remainingBytes < 0)
       {
-         printf ("ERROR: AC3 (8) remaining bytes = %d\n", remainingBytes);
+         LOG_INFO_ARGS ("ERROR: AC3 (8) remaining bytes = %d", remainingBytes);
       }
    }
 
-   printf ("AC3 complete:  remaining bytes = %d\n", remainingBytes);
+   LOG_INFO_ARGS ("AC3 complete:  remaining bytes = %d", remainingBytes);
    bs_skip_bytes (b, remainingBytes);
 
    free(desc); 
