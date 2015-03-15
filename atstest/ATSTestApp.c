@@ -437,6 +437,7 @@ static int pmt_processor(mpeg2ts_program_t *m2p, void *arg)
 
 //         printf ("stream type = %d\n", pi->es_info->stream_type);
 //         printf ("elementary PID = %d\n", pi->es_info->elementary_PID);
+         descriptor_t *desc = NULL;
          if (IS_SCTE35_STREAM(pi->es_info->stream_type))
          {
             LOG_INFO_ARGS ("SCTE35: stream type = %d", pi->es_info->stream_type);
@@ -461,9 +462,7 @@ static int pmt_processor(mpeg2ts_program_t *m2p, void *arg)
             // hook PID processor to PID
             mpeg2ts_program_register_pid_processor(m2p, pi->es_info->elementary_PID, demux_handler, demux_validator);
          }
-
-         descriptor_t *desc = NULL;
-         if (IS_VIDEO_STREAM(pi->es_info->stream_type))
+         else if (IS_VIDEO_STREAM(pi->es_info->stream_type))
          {
             // Look for the SCTE128 descriptor in the ES loop
             for (int d = 0; d < vqarray_length(pi->es_info->descriptors); d++)
