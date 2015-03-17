@@ -75,13 +75,11 @@ static int validate_ts_packet(ts_packet_t *ts, elementary_stream_info_t *es_info
                int arrayIndex = get2DArrayIndex (ebpIngestThreadParams->threadNum, 0, ebpIngestThreadParams->numStreams);    
                ebp_stream_info_t **streamInfos = &((ebpIngestThreadParams->allStreamInfos)[arrayIndex]);
 
-               thread_safe_fifo_t *fifo = NULL;
-               int fifoIndex = -1;
-               findFIFO (es_info->elementary_PID, streamInfos, ebpIngestThreadParams->numStreams,
-                  &fifo, &fifoIndex);
-               ebp_stream_info_t * streamInfo = streamInfos[fifoIndex];
+               for (int i=0; i<ebpIngestThreadParams->numStreams; i++)
+               {
+                  addSCTE35Point_AllBoundaries (ebpIngestThreadParams->threadNum, streamInfos[i], PTS);
+               }
 
-               addSCTE35Point_AllBoundaries (ebpIngestThreadParams->threadNum, streamInfo, PTS);
             }
          }
          
@@ -1125,6 +1123,12 @@ void checkEBPAgainstSCTE35Points (varray_t* scte35List, uint64_t PTS, uint64_t d
 void addSCTE35Point_AllBoundaries (int threadNum, ebp_stream_info_t *streamInfo, uint64_t PTS)
 {
    ebp_boundary_info_t *ebpBoundaryInfo = streamInfo->ebpBoundaryInfo;
+
+   if (streamInfo->fifo == NULL)
+   {
+      // this elementary stream is not handled for this file/ingest
+      return;
+   }
 
    for (int i=0; i<EBP_NUM_PARTITIONS; i++)
    {

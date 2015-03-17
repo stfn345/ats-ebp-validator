@@ -37,10 +37,6 @@
 
 #include "ATSTestReport.h"
 
-static uint8_t *g_pmtBuffer = NULL;
-static size_t g_pmtBufferAllocSz = 0;
-static size_t g_pmtBufferUsedSz = 0;
-
 
 typedef struct {
    int type; 
@@ -377,18 +373,19 @@ void program_map_section_free(program_map_section_t *pms)
    free(pms);
 }
 
-void resetPMTBuffer()
+void resetPMTBuffer(psi_table_buffer_t *pmtBuffer)
 {
-   if (g_pmtBuffer != NULL)
+   if (pmtBuffer->buffer != NULL)
    {
-      free (g_pmtBuffer);
-      g_pmtBuffer = NULL;
-      g_pmtBufferAllocSz = 0;
-      g_pmtBufferUsedSz = 0;
+      free (pmtBuffer->buffer);
+      pmtBuffer->buffer = NULL;
+      pmtBuffer->bufferAllocSz = 0;
+      pmtBuffer->bufferUsedSz = 0;
    }
 }
 
-int program_map_section_read(program_map_section_t *pms, uint8_t *buf, size_t buf_size, uint32_t payload_unit_start_indicator) 
+int program_map_section_read(program_map_section_t *pms, uint8_t *buf, size_t buf_size, uint32_t payload_unit_start_indicator,
+   psi_table_buffer_t *pmtBuffer) 
 { 
    LOG_DEBUG ("program_map_section_read -- entering");
    if (pms == NULL || buf == NULL) 
@@ -399,7 +396,7 @@ int program_map_section_read(program_map_section_t *pms, uint8_t *buf, size_t bu
 
    bs_t *b = NULL;
 
-   if (!payload_unit_start_indicator &&  g_pmtBuffer == NULL)
+   if (!payload_unit_start_indicator &&  pmtBuffer->buffer == NULL)
    {
       // this TS packet is not start of table, and we have no cached table data
       return 0;
@@ -414,26 +411,26 @@ int program_map_section_read(program_map_section_t *pms, uint8_t *buf, size_t bu
    }
 
    // check for pmt spanning multiple TS packets
-   if (g_pmtBuffer != NULL)
+   if (pmtBuffer->buffer != NULL)
    {
-      LOG_DEBUG_ARGS ("program_map_section_read: g_pmtBuffer detected: g_pmtBufferAllocSz = %d, pmtBufferUsedSz = %d", g_pmtBufferAllocSz, g_pmtBufferUsedSz);
+      LOG_DEBUG_ARGS ("program_map_section_read: pmtBuffer detected: pmtBufferAllocSz = %d, pmtBufferUsedSz = %d", pmtBuffer->bufferAllocSz, pmtBuffer->bufferUsedSz);
       size_t numBytesToCopy = buf_size;
-      if (buf_size > (g_pmtBufferAllocSz - g_pmtBufferUsedSz))
+      if (buf_size > (pmtBuffer->bufferAllocSz - pmtBuffer->bufferUsedSz))
       {
-         numBytesToCopy = g_pmtBufferAllocSz - g_pmtBufferUsedSz;
+         numBytesToCopy = pmtBuffer->bufferAllocSz - pmtBuffer->bufferUsedSz;
       }
          
-      LOG_DEBUG_ARGS ("program_map_section_read: copying %d bytes to g_pmtBuffer", numBytesToCopy);
-      memcpy (g_pmtBuffer + g_pmtBufferUsedSz, buf, numBytesToCopy);
-      g_pmtBufferUsedSz += numBytesToCopy;
+      LOG_DEBUG_ARGS ("program_map_section_read: copying %d bytes to pmtBuffer", numBytesToCopy);
+      memcpy (pmtBuffer->buffer + pmtBuffer->bufferUsedSz, buf, numBytesToCopy);
+      pmtBuffer->bufferUsedSz += numBytesToCopy;
       
-      if (g_pmtBufferUsedSz < g_pmtBufferAllocSz)
+      if (pmtBuffer->bufferUsedSz < pmtBuffer->bufferAllocSz)
       {
-         LOG_DEBUG ("program_map_section_read: g_pmtBuffer not yet full -- returning");
+         LOG_DEBUG ("program_map_section_read: pmtBuffer not yet full -- returning");
          return 0;
       }
 
-      b = bs_new(g_pmtBuffer, g_pmtBufferUsedSz);
+      b = bs_new(pmtBuffer->buffer, pmtBuffer->bufferUsedSz);
    }
    else
    {
@@ -446,7 +443,7 @@ int program_map_section_read(program_map_section_t *pms, uint8_t *buf, size_t bu
       LOG_ERROR_ARGS("Table ID in PMT is 0x%02X instead of expected 0x%02X", pms->table_id, TS_program_map_section); 
       reportAddErrorLogArgs("Table ID in PMT is 0x%02X instead of expected 0x%02X", pms->table_id, TS_program_map_section); 
       SAFE_REPORT_TS_ERR(-40);
-      if (g_pmtBuffer != NULL) resetPMTBuffer();
+      resetPMTBuffer(pmtBuffer);
       return 0;
    }
 
@@ -456,7 +453,7 @@ int program_map_section_read(program_map_section_t *pms, uint8_t *buf, size_t bu
       LOG_ERROR("section_syntax_indicator not set in PMT"); 
       reportAddErrorLog("section_syntax_indicator not set in PMT"); 
       SAFE_REPORT_TS_ERR(-41); 
-      if (g_pmtBuffer != NULL) resetPMTBuffer();
+      resetPMTBuffer(pmtBuffer);
       return 0;
    }
    
@@ -470,7 +467,7 @@ int program_map_section_read(program_map_section_t *pms, uint8_t *buf, size_t bu
       reportAddErrorLogArgs("PMT section length is 0x%02X, larger than maximum allowed 0x%02X", 
                      pms->section_length, MAX_SECTION_LEN); 
       SAFE_REPORT_TS_ERR(-42); 
-      if (g_pmtBuffer != NULL) resetPMTBuffer();
+      resetPMTBuffer(pmtBuffer);
       return 0;
    }
 
@@ -478,17 +475,17 @@ int program_map_section_read(program_map_section_t *pms, uint8_t *buf, size_t bu
    {
       LOG_DEBUG ("program_map_section_read: Detected section spans more than one TS packet -- allocating buffer");
 
-      if (g_pmtBuffer != NULL)
+      if (pmtBuffer->buffer != NULL)
       {
          // should never get here
          LOG_ERROR ("program_map_section_read: unexpected pmtBufffer");
-         resetPMTBuffer();
+         resetPMTBuffer(pmtBuffer);
       }
 
-      g_pmtBufferAllocSz = pms->section_length + 3;
-      g_pmtBuffer = (uint8_t *)calloc (pms->section_length + 3, 1);
-      memcpy (g_pmtBuffer, buf, buf_size);
-      g_pmtBufferUsedSz = buf_size;
+      pmtBuffer->bufferAllocSz = pms->section_length + 3;
+      pmtBuffer->buffer = (uint8_t *)calloc (pms->section_length + 3, 1);
+      memcpy (pmtBuffer->buffer, buf, buf_size);
+      pmtBuffer->bufferUsedSz = buf_size;
 
       bs_free (b);
       return 0;
@@ -513,7 +510,7 @@ int program_map_section_read(program_map_section_t *pms, uint8_t *buf, size_t bu
       LOG_ERROR("Multi-section PMT is not allowed/n"); 
       reportAddErrorLog("Multi-section PMT is not allowed/n"); 
       SAFE_REPORT_TS_ERR(-43); 
-      if (g_pmtBuffer != NULL) resetPMTBuffer();
+      resetPMTBuffer(pmtBuffer);
       return 0;
    }
    
@@ -524,7 +521,7 @@ int program_map_section_read(program_map_section_t *pms, uint8_t *buf, size_t bu
       LOG_ERROR_ARGS("PCR PID has invalid value 0x%02X", pms->PCR_PID); 
       reportAddErrorLogArgs("PCR PID has invalid value 0x%02X", pms->PCR_PID); 
       SAFE_REPORT_TS_ERR(-44); 
-      if (g_pmtBuffer != NULL) resetPMTBuffer();
+      resetPMTBuffer(pmtBuffer);
       return 0;
    }
  //  printf ("PCR PID = %d\n", pms->PCR_PID);
@@ -538,7 +535,7 @@ int program_map_section_read(program_map_section_t *pms, uint8_t *buf, size_t bu
       reportAddErrorLogArgs("PMT program info length is 0x%02X, larger than maximum allowed 0x%02X", 
                      pms->program_info_length, MAX_PROGRAM_INFO_LEN); 
       SAFE_REPORT_TS_ERR(-45); 
-      if (g_pmtBuffer != NULL) resetPMTBuffer();
+      resetPMTBuffer(pmtBuffer);
       return 0;
    }
    
@@ -562,7 +559,7 @@ int program_map_section_read(program_map_section_t *pms, uint8_t *buf, size_t bu
       LOG_ERROR_ARGS("PMT CRC_32 specified as 0x%08X, but calculated as 0x%08X", pms->CRC_32, pas_crc); 
       reportAddErrorLogArgs("PMT CRC_32 specified as 0x%08X, but calculated as 0x%08X", pms->CRC_32, pas_crc); 
       SAFE_REPORT_TS_ERR(-46); 
-      if (g_pmtBuffer != NULL) resetPMTBuffer();
+      resetPMTBuffer(pmtBuffer);
       return 0;
    } 
    else 
@@ -573,10 +570,11 @@ int program_map_section_read(program_map_section_t *pms, uint8_t *buf, size_t bu
    int bytes_read = bs_pos(b); 
    bs_free(b); 
 
-   resetPMTBuffer();
+   resetPMTBuffer(pmtBuffer);
 
    return bytes_read;
 }
+
 // int program_map_section_write(program_map_section_t *pms, uint8_t *buf, size_t buf_size);
 int program_map_section_print(program_map_section_t *pms, char *str, size_t str_len) 
 { 

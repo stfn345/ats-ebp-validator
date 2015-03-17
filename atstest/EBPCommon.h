@@ -23,9 +23,6 @@
 #include "varray.h"
 
 
-//#define TS_SIZE 188
-//#define TS_SIZE 17
-
 #define EBP_NUM_PARTITIONS 10  // 0 - 9
 #define EBP_ALLOWED_PTS_JITTER_SECS  2  // if the expected period is given in the EBP descriptor, then this value
                                         // gives the required accuracy in conforming to that period

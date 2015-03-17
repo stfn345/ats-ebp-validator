@@ -56,6 +56,13 @@ typedef enum {
 #define MAX_PROGRAM_INFO_LEN	        0x03FF
 #define MAX_ES_INFO_LEN			0x03FF
 
+typedef struct
+{
+   uint8_t *buffer;
+   size_t bufferAllocSz;
+   size_t bufferUsedSz;
+} psi_table_buffer_t;
+
 
 // PAT
 
@@ -132,7 +139,8 @@ typedef struct {
 program_map_section_t* program_map_section_new(); 
 void program_map_section_free(program_map_section_t *pms); 
 
-int program_map_section_read(program_map_section_t *pms, uint8_t *buf, size_t buf_size, uint32_t payload_unit_start_indicator); 
+int program_map_section_read(program_map_section_t *pms, uint8_t *buf, size_t buf_size, uint32_t payload_unit_start_indicator,
+                             psi_table_buffer_t *pmtBuffer); 
 int program_map_section_write(program_map_section_t *pms, uint8_t *buf, size_t buf_size); 
 int program_map_section_print(program_map_section_t *pms, char *str, size_t str_len); 
 

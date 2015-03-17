@@ -20,6 +20,16 @@
 
 int get2DArrayIndex (int fileIndex, int streamIndex, int numStreams)
 {
+   // the data in all 2D arrays is arranged in the following order:
+   //
+   // file_1: elemstream_1, elemstream_2, elemstream_3,...elemenstream_N
+   // file_2: elemstream_1, elemstream_2, elemstream_3,...elemenstream_N
+   // file_3: elemstream_1, elemstream_2, elemstream_3,...elemenstream_N
+   // ...
+   // file_M: elemstream_1, elemstream_2, elemstream_3,...elemenstream_N
+   //
+   // where N = numStreams
+   
    return fileIndex * numStreams + streamIndex;
 }
 

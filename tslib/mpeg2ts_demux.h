@@ -81,6 +81,9 @@ struct _mpeg2ts_program_
 
    uint32_t scte128_enabled;        /// Determines if SCTE128 private data is available
                                     /// and should be parsed
+
+   // used for decoding pmt split among multiple TS packets
+   psi_table_buffer_t pmtBuffer;
 }; 
 
 struct _mpeg2ts_stream_ 

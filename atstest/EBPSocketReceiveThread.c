@@ -174,7 +174,7 @@ void *EBPSocketReceiveThreadProc(void *threadParams)
       else
       {
          char temp[100];
-         sprintf (temp, "%s_%u.%u.%u.%u:%d.ts", 
+         sprintf (temp, "%s_%u.%u.%u.%u_%d.ts", 
             g_streamDumpBaseName, 
             (unsigned int) (ebpSocketReceiveThreadParams->ipAddr >> 24),
             (unsigned int) ((ebpSocketReceiveThreadParams->ipAddr >> 16) & 0x0FF), 

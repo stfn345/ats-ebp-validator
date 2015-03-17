@@ -388,7 +388,8 @@ int mpeg2ts_program_read_pmt(mpeg2ts_program_t *m2p, ts_packet_t *ts)
    // GORP: take account of payload_unit_start pointer
    LOG_INFO_ARGS ("mpeg2ts_program_read_pmt -- 1: ts->payload.len = %d, adaptation_field_control = %d, payload_unit_start_indicator = %d", 
       ts->payload.len, ts->header.adaptation_field_control, ts->header.payload_unit_start_indicator);
-   if (program_map_section_read(new_pms, ts->payload.bytes, ts->payload.len, ts->header.payload_unit_start_indicator) == 0) 
+   if (program_map_section_read(new_pms, ts->payload.bytes, ts->payload.len, ts->header.payload_unit_start_indicator,
+      &(m2p->pmtBuffer)) == 0) 
    {
       LOG_INFO ("mpeg2ts_program_read_pmt returned 0");
       program_map_section_free(new_pms); 
