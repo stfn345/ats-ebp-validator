@@ -118,7 +118,7 @@ void program_association_section_free(program_association_section_t *pas)
    free(pas);
 }
 
-int program_association_section_read(program_association_section_t *pas, uint8_t *buf, size_t buf_len)
+int program_association_section_read(program_association_section_t *pas, uint8_t *buf, size_t buf_len, uint32_t payload_unit_start_indicator)
 { 
    vqarray_t *programs;
    int num_programs = 0;
@@ -128,6 +128,23 @@ int program_association_section_read(program_association_section_t *pas, uint8_t
       SAFE_REPORT_TS_ERR(-1); 
       return 0;
    }
+      
+   if (!payload_unit_start_indicator)
+   {
+      // this TS packet is not start of table
+      LOG_ERROR ("program_association_section_read: payload_unit_start_indicator not set");
+      return 0;
+   }
+
+   if (payload_unit_start_indicator)
+   {
+      uint8_t payloadStartPtr = buf[0];
+      buf += (payloadStartPtr + 1);
+      buf_len -= (payloadStartPtr + 1);
+      LOG_DEBUG_ARGS ("program_association_section_read: payloadStartPtr = %d", payloadStartPtr);
+   }
+
+
    
    bs_t *b = bs_new(buf, buf_len); 
    
@@ -626,7 +643,7 @@ void conditional_access_section_free(conditional_access_section_t *cas)
    free(cas);
 }
 
-int conditional_access_section_read(conditional_access_section_t *cas, uint8_t *buf, size_t buf_len) 
+int conditional_access_section_read(conditional_access_section_t *cas, uint8_t *buf, size_t buf_len, uint32_t payload_unit_start_indicator) 
 { 
    if (cas == NULL || buf == NULL) 
    {
@@ -634,6 +651,21 @@ int conditional_access_section_read(conditional_access_section_t *cas, uint8_t *
       return 0;
    }
    
+   if (!payload_unit_start_indicator)
+   {
+      // this TS packet is not start of table
+      LOG_ERROR ("conditional_access_section_read: payload_unit_start_indicator not set");
+      return 0;
+   }
+
+   if (payload_unit_start_indicator)
+   {
+      uint8_t payloadStartPtr = buf[0];
+      buf += (payloadStartPtr + 1);
+      buf_len -= (payloadStartPtr + 1);
+      LOG_DEBUG_ARGS ("conditional_access_section_read: payloadStartPtr = %d", payloadStartPtr);
+   }
+
    bs_t *b = bs_new(buf, buf_len); 
    
    cas->table_id = bs_read_u8(b); 

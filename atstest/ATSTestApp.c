@@ -34,6 +34,8 @@
 #include "ATSTestApp.h"
 #include "ATSTestReport.h"
 #include "ATSTestDefines.h"
+#include "ATSTestAppConfig.h"
+
 
 
 static int g_bPATFound = 0;
@@ -348,7 +350,9 @@ static int handle_pes_packet(pes_packet_t *pes, elementary_stream_info_t *esi, v
    }
    else
    {
-      if ((currentTimeMsecs - g_streamStartTimeMsecs) > PREREAD_EBP_SEARCH_TIME_MSECS)
+      
+//      if ((currentTimeMsecs - g_streamStartTimeMsecs) > PREREAD_EBP_SEARCH_TIME_MSECS)
+      if ((currentTimeMsecs - g_streamStartTimeMsecs) > g_ATSTestAppConfig.ebpPrereadSearchTimeMsecs)
       {
          LOG_INFO ("EBP search timed out\n");
          g_bEBPSearchEnded = 1;
@@ -1546,6 +1550,10 @@ void printStreamInfo(int numIngests, int numStreams, ebp_stream_info_t **streamI
 
 int main(int argc, char** argv) 
 {
+   // GORP: check return code
+   initTestConfig();
+   tslib_loglevel = g_ATSTestAppConfig.logLevel;
+
    if (argc < 2)
    {
       usage();
@@ -1600,7 +1608,7 @@ int main(int argc, char** argv)
        }
    }
 
-   int nReturn = set_log_file("C:\\Cablelabs\\EBP_Validator\\ats-ebp-validator\\atstest\\EBPTestLog.txt");
+   int nReturn = set_log_file(g_ATSTestAppConfig.logFilePath);
    if (nReturn != 0)
    {
       LOG_INFO ("ERROR opening log file");
@@ -1659,7 +1667,7 @@ void runStreamIngestMode(int numIngestStreams, char **ingestAddrs, int peekFlag,
    for (int i=0; i<numIngestStreams; i++)
    {
       ingestBuffers[i] = (circular_buffer_t *)calloc (1, sizeof (circular_buffer_t));
-      returnCode = cb_init (ingestBuffers[i], 10000 * TS_SIZE /* GORP */);
+      returnCode = cb_init (ingestBuffers[i], g_ATSTestAppConfig.ingestCircularBufferSz);
       if (returnCode != 0)
       {
          LOG_ERROR ("runStreamIngestMode: FATAL ERROR creating circular buffer: exiting"); 

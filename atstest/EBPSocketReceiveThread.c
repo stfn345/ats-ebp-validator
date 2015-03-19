@@ -31,6 +31,7 @@
 #include "EBPSocketReceiveThread.h"
 #include "EBPThreadLogging.h"
 #include "ATSTestReport.h"
+#include "ATSTestAppConfig.h"
 
 #include "ts.h"
 
@@ -96,7 +97,7 @@ void *EBPSocketReceiveThreadProc(void *threadParams)
 	}
 
 
-   int rcvBufSz = 2000000;
+   int rcvBufSz = g_ATSTestAppConfig.socketRcvBufferSz;
    if (setsockopt(mySocket, SOL_SOCKET, SO_RCVBUF, &rcvBufSz, sizeof(int)) < 0) 
    {
       LOG_ERROR_ARGS("EBPSocketReceiveThread %d: Error from setsockopt: %s", 

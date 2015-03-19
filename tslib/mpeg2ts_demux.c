@@ -267,14 +267,15 @@ int mpeg2ts_stream_read_cat(mpeg2ts_stream_t *m2s, ts_packet_t *ts)
       return 0; 
    }
    
-   if (conditional_access_section_read(new_cas, ts->payload.bytes + 1, ts->payload.len - 1) == 0) 
+
+   if (conditional_access_section_read(new_cas, ts->payload.bytes, ts->payload.len, ts->header.payload_unit_start_indicator) == 0) 
    {
       conditional_access_section_free(new_cas); 
       ts_free(ts);    
       return 0; 
    }
    
-   // FIXME: allow >1 packet cat
+   // GORP: allow >1 packet cat
    // we know that we have a complete new cat
    int new_cat_version = (m2s->cat == NULL); 
    
@@ -327,14 +328,14 @@ int mpeg2ts_stream_read_pat(mpeg2ts_stream_t *m2s, ts_packet_t *ts)
       return 0; 
    }
    
-   if (program_association_section_read(new_pas, ts->payload.bytes + 1, ts->payload.len - 1) == 0) 
+   if (program_association_section_read(new_pas, ts->payload.bytes, ts->payload.len, ts->header.payload_unit_start_indicator) == 0) 
    {
       program_association_section_free(new_pas); 
       ts_free(ts);    
       return 0; 
    }
    
-   // FIXME: allow >1 packet PAT
+   // GORP: allow >1 packet PAT
    // we know that we have a complete new PAT
    int new_pat_version = (m2s->pat == NULL); 
    
@@ -385,7 +386,6 @@ int mpeg2ts_program_read_pmt(mpeg2ts_program_t *m2p, ts_packet_t *ts)
       return ret;
    }
    
-   // GORP: take account of payload_unit_start pointer
    LOG_INFO_ARGS ("mpeg2ts_program_read_pmt -- 1: ts->payload.len = %d, adaptation_field_control = %d, payload_unit_start_indicator = %d", 
       ts->payload.len, ts->header.adaptation_field_control, ts->header.payload_unit_start_indicator);
    if (program_map_section_read(new_pms, ts->payload.bytes, ts->payload.len, ts->header.payload_unit_start_indicator,
@@ -397,7 +397,6 @@ int mpeg2ts_program_read_pmt(mpeg2ts_program_t *m2p, ts_packet_t *ts)
       return ret;
    }
    
-// FIXME: allow >1 packet PAT
 // we know that we have a complete new PAT
    int new_pmt_version = (m2p->pmt == NULL); 
    

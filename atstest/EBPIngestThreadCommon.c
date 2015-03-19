@@ -36,6 +36,7 @@
 
 #include "ATSTestDefines.h"
 #include "ATSTestReport.h"
+#include "ATSTestAppConfig.h"
 
 
 
@@ -838,7 +839,8 @@ int detectBoundary(int threadNum, ebp_t* ebp, ebp_stream_info_t *streamInfo, uin
             if (ebpBoundaryInfo[i].listSCTE35 != NULL)
             {
                // check against SCTE35
-               checkEBPAgainstSCTE35Points (ebpBoundaryInfo[i].listSCTE35, PTS, SCTE35_EBP_PTS_JITTER_SECS, threadNum,
+               
+               checkEBPAgainstSCTE35Points (ebpBoundaryInfo[i].listSCTE35, PTS, g_ATSTestAppConfig.ebpSCTE35PTSJitterSecs, threadNum,
                   i /* partitionID */, streamInfo->PID);
             }
          }
@@ -945,8 +947,8 @@ int detectBoundary(int threadNum, ebp_t* ebp, ebp_stream_info_t *streamInfo, uin
    {
       if (ebpBoundaryInfo[i].listSCTE35 != NULL)
       {
-         // check against SCTE35
-         checkEBPAgainstSCTE35Points (ebpBoundaryInfo[i].listSCTE35, PTS, SCTE35_EBP_PTS_JITTER_SECS, threadNum,
+         // check against SCTE35  
+         checkEBPAgainstSCTE35Points (ebpBoundaryInfo[i].listSCTE35, PTS, g_ATSTestAppConfig.ebpSCTE35PTSJitterSecs, threadNum,
             i /* partitionID */, streamInfo->PID);
       }
    }
@@ -1149,8 +1151,8 @@ void checkPTSAgainstSCTE35Points_AllBoundaries (int threadNum, ebp_stream_info_t
       if (ebpBoundaryInfo[i].listSCTE35 == NULL)
       {
          continue;
-      }
-      checkPTSAgainstSCTE35Points (ebpBoundaryInfo[i].listSCTE35, PTS, SCTE35_EBP_PTS_JITTER_SECS, 
+      }  
+      checkPTSAgainstSCTE35Points (ebpBoundaryInfo[i].listSCTE35, PTS, g_ATSTestAppConfig.ebpSCTE35PTSJitterSecs, 
          threadNum, i /* partitionID */, streamInfo->PID);
    }
 }

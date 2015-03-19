@@ -88,7 +88,7 @@ typedef struct {
 
 program_association_section_t* program_association_section_new(); 
 void program_association_section_free(program_association_section_t *pas); 
-int program_association_section_read(program_association_section_t *pas, uint8_t *buf, size_t buf_len); 
+int program_association_section_read(program_association_section_t *pas, uint8_t *buf, size_t buf_len, uint32_t payload_unit_start_indicator); 
 int program_association_section_print(const program_association_section_t *pas, char *str, size_t str_len); 
 
 typedef struct {
@@ -108,7 +108,7 @@ typedef struct {
 
 conditional_access_section_t* conditional_access_section_new();
 void conditional_access_section_free(conditional_access_section_t *cas);
-int conditional_access_section_read(conditional_access_section_t *cas, uint8_t *buf, size_t buf_len);
+int conditional_access_section_read(conditional_access_section_t *cas, uint8_t *buf, size_t buf_len, uint32_t payload_unit_start_indicator);
 int conditional_access_section_print(const conditional_access_section_t *cas, char *str, size_t str_len); 
  
 // PMT

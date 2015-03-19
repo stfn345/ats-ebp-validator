@@ -1,0 +1,13 @@
+
+// logLevel: 1 ERROR, 2 WARNING, 3 INFO, 4 DEBUG
+logLevel = 3
+//logFilePath = enter log path here then uncomment
+
+ebpPrereadSearchTimeMsecs = 10000
+ebpAllowedPTSJitterSecs = 2
+ebpSCTE35PTSJitterSecs = 2
+socketRcvBufferSz = 2000000
+ingestCircularBufferSz = 188000
+
+
+

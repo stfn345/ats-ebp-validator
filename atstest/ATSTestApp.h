@@ -22,7 +22,7 @@
 #include "EBPStreamBuffer.h"
 
 //#define PREREAD_EBP_SEARCH_TIME_MSECS   10000
-#define PREREAD_EBP_SEARCH_TIME_MSECS   10000000
+//#define PREREAD_EBP_SEARCH_TIME_MSECS   10000000
 
 typedef struct
 {

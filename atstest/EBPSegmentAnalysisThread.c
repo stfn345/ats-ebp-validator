@@ -31,6 +31,8 @@
 #include "EBPSegmentAnalysisThread.h"
 #include "EBPThreadLogging.h"
 #include "ATSTestReport.h"
+#include "ATSTestAppConfig.h"
+
 
 
 void *EBPSegmentAnalysisThreadProc(void *threadParams)
@@ -455,7 +457,7 @@ void checkDistanceFromLastPTS(int threadID, ebp_stream_info_t *streamInfo, ebp_s
    LOG_INFO_ARGS ("PTS = %"PRId64", expected PTS= %"PRId64", deltaPTS = %"PRId64"", 
       ebpSegmentInfo->PTS, expectedPTS, deltaPTS);
 
-   if (ebpBoundaryInfo->lastPTS != 0 && deltaPTS > EBP_ALLOWED_PTS_JITTER_SECS * 90000)
+   if (ebpBoundaryInfo->lastPTS != 0 && deltaPTS > g_ATSTestAppConfig.ebpAllowedPTSJitterSecs * 90000)
    {
       LOG_ERROR_ARGS ("EBPSegmentAnalysisThread %d: PTS %"PRId64" differs from expected PTS %"PRId64" for partition %d", threadID,
          ebpSegmentInfo->PTS, expectedPTS, ebpSegmentInfo->partitionId);
