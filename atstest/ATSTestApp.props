@@ -1,12 +1,27 @@
+// EBP Conformance Test Tool configuration
 
 // logLevel: 1 ERROR, 2 WARNING, 3 INFO, 4 DEBUG
 logLevel = 3
-//logFilePath = enter log path here then uncomment
 
+// enter log path here then uncomment
+//logFilePath = 
+
+// amount of time spent searching for EBP structs at start of test in
+// the case where EBP descriptor is not present
 ebpPrereadSearchTimeMsecs = 10000
+
+// allowed time difference between expected EBP location (from EBP descriptor, if present)
+// and actual EBP location
 ebpAllowedPTSJitterSecs = 2
+
+// allowed time difference between expected EBP location (from SCTE35, if present)
+// and actual EBP location
 ebpSCTE35PTSJitterSecs = 2
+
+// for multicast case, size of UDP receive buffer
 socketRcvBufferSz = 2000000
+
+// size of buffer holding transport stream data waiting to be processed
 ingestCircularBufferSz = 188000
 
 
