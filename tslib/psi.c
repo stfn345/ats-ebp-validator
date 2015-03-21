@@ -313,10 +313,10 @@ int es_info_read(elementary_stream_info_t *es, bs_t *b)
 
    bs_skip_u(b, 4); 
    es->ES_info_length = bs_read_u(b, 12); 
-   LOG_INFO_ARGS ("es_info_read: es_info_start = %d, bs_pos(b) = %d, b->end = %d", es_info_start, bs_pos(b), b->end - b->start);
-   LOG_INFO_ARGS ("es_info_read pre-return %d", bs_pos(b) - es_info_start);
+   LOG_DEBUG_ARGS ("es_info_read: es_info_start = %d, bs_pos(b) = %d, b->end = %d", es_info_start, bs_pos(b), b->end - b->start);
+   LOG_DEBUG_ARGS ("es_info_read pre-return %d", bs_pos(b) - es_info_start);
    
-   LOG_INFO_ARGS ("es_info_read: PID = %d, streamType = 0x%x, ES_info_length = %d.  Calling read_descriptor_loop", 
+   LOG_DEBUG_ARGS ("es_info_read: PID = %d, streamType = 0x%x, ES_info_length = %d.  Calling read_descriptor_loop", 
       es->elementary_PID, es->stream_type, es->ES_info_length);
    
    read_descriptor_loop(es->descriptors, b, es->ES_info_length); 
@@ -330,7 +330,7 @@ int es_info_read(elementary_stream_info_t *es, bs_t *b)
       return 0;
    }
 
-   LOG_INFO_ARGS ("es_info_read returning %d", bs_pos(b) - es_info_start);
+   LOG_DEBUG_ARGS ("es_info_read returning %d", bs_pos(b) - es_info_start);
    return bs_pos(b) - es_info_start;
 }
 

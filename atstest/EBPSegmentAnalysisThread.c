@@ -103,7 +103,7 @@ void *EBPSegmentAnalysisThreadProc(void *threadParams)
 
             if (element == NULL)
             {
-               LOG_DEBUG_ARGS ("EBPSegmentAnalysisThread %d: pop complete: element = NULL: marking fifo %d as inactive", 
+               LOG_INFO_ARGS ("EBPSegmentAnalysisThread %d: pop complete: element = NULL: marking fifo %d as inactive", 
                   ebpSegmentAnalysisThreadParams->threadID, i);
                // worker thread is done -- keep track of these
                fifoNotActive[i] = 1;
@@ -140,7 +140,7 @@ void *EBPSegmentAnalysisThreadProc(void *threadParams)
                   }
                }
 
-               checkDistanceFromLastPTS(ebpSegmentAnalysisThreadParams->threadID, streamInfo, ebpSegmentInfo);
+               checkDistanceFromLastPTS(ebpSegmentAnalysisThreadParams->threadID, streamInfo, ebpSegmentInfo, i);
 
                // next check that acquisition time matches
                if (!acquisitionTimeSet)
@@ -339,12 +339,13 @@ int syncIncomingStreams (int threadID, int numFiles, ebp_stream_info_t **streamI
          LOG_INFO_ARGS ("EBPSegmentAnalysisThread:syncIncomingStreams %d: peek complete: element = NULL: marking fifo %d inactive", 
             threadID, i);
          // worker thread is done -- keep track of these
+         fifo_pop (fifo, &element);  //pop the element just to keep fifo counters symmetrical
          fifoNotActive[i] = 1;
       }
       else
       {            
          ebp_segment_info_t *ebpSegmentInfo = (ebp_segment_info_t *)element;
-         LOG_DEBUG_ARGS ("EBPSegmentAnalysisThread:syncIncomingStreams %d: PEEKED PTS = %"PRId64" from fifo %d (PID %d), descriptor = %x", 
+         LOG_INFO_ARGS ("EBPSegmentAnalysisThread:syncIncomingStreams %d: PEEKED PTS = %"PRId64" from fifo %d (PID %d), descriptor = %x", 
             threadID, ebpSegmentInfo->PTS, i, streamInfos[i]->PID, (unsigned int)(ebpSegmentInfo->latestEBPDescriptor));               
          if (ebpSegmentInfo->PTS > startPTS)
          {
@@ -386,6 +387,7 @@ int syncIncomingStreams (int threadID, int numFiles, ebp_stream_info_t **streamI
          {
             LOG_INFO_ARGS ("EBPSegmentAnalysisThread:syncIncomingStreams %d: pruning: peek complete: element = NULL -- marking fifo %d inactive", threadID, i);
             // worker thread is done -- keep track of these
+            fifo_pop (fifo, &element);  //pop the element just to keep fifo counters symmetrical
             fifoNotActive[i] = 1;
             break;
          }
@@ -426,7 +428,7 @@ int syncIncomingStreams (int threadID, int numFiles, ebp_stream_info_t **streamI
 }
 
 
-void checkDistanceFromLastPTS(int threadID, ebp_stream_info_t *streamInfo, ebp_segment_info_t *ebpSegmentInfo)
+void checkDistanceFromLastPTS(int threadID, ebp_stream_info_t *streamInfo, ebp_segment_info_t *ebpSegmentInfo, int fifoId)
 { 
    if (ebpSegmentInfo->latestEBPDescriptor == NULL)
    {
@@ -442,6 +444,9 @@ void checkDistanceFromLastPTS(int threadID, ebp_stream_info_t *streamInfo, ebp_s
    }
 
    float numSecsGap = partition->ebp_distance / ebpSegmentInfo->latestEBPDescriptor->ticks_per_second;
+   LOG_INFO_ARGS ("EBPSegmentAnalysisThread %d: FIFO %d: partition %d: ebp_distance = %d, ticks_per_second = %d, numSecsGap = %f", 
+      threadID, fifoId, ebpSegmentInfo->partitionId,
+      partition->ebp_distance, ebpSegmentInfo->latestEBPDescriptor->ticks_per_second, numSecsGap);
 
    ebp_boundary_info_t *ebpBoundaryInfo = &((streamInfo->ebpBoundaryInfo)[ebpSegmentInfo->partitionId]);
    uint64_t expectedPTS = ebpBoundaryInfo->lastPTS + numSecsGap * 90000;
@@ -454,15 +459,16 @@ void checkDistanceFromLastPTS(int threadID, ebp_stream_info_t *streamInfo, ebp_s
    {
       deltaPTS = ebpSegmentInfo->PTS - expectedPTS;
    }
-   LOG_INFO_ARGS ("PTS = %"PRId64", expected PTS= %"PRId64", deltaPTS = %"PRId64"", 
-      ebpSegmentInfo->PTS, expectedPTS, deltaPTS);
+   LOG_INFO_ARGS ("EBPSegmentAnalysisThread %d: FIFO %d: partition %d: PTS = %"PRId64", lastPTS = %"PRId64", expected PTS= %"PRId64", deltaPTS = %"PRId64", numSecsGap = %f", 
+      threadID, fifoId, ebpSegmentInfo->partitionId,
+      ebpSegmentInfo->PTS, ebpBoundaryInfo->lastPTS, expectedPTS, deltaPTS, numSecsGap);
 
    if (ebpBoundaryInfo->lastPTS != 0 && deltaPTS > g_ATSTestAppConfig.ebpAllowedPTSJitterSecs * 90000)
    {
-      LOG_ERROR_ARGS ("EBPSegmentAnalysisThread %d: PTS %"PRId64" differs from expected PTS %"PRId64" for partition %d", threadID,
-         ebpSegmentInfo->PTS, expectedPTS, ebpSegmentInfo->partitionId);
-      reportAddErrorLogArgs ("EBPSegmentAnalysisThread %d: PTS %"PRId64" differs from expected PTS %"PRId64" for partition %d", threadID,
-         ebpSegmentInfo->PTS, expectedPTS, ebpSegmentInfo->partitionId);
+      LOG_ERROR_ARGS ("EBPSegmentAnalysisThread %d: FIFO %d: PTS %"PRId64" differs from expected PTS %"PRId64" (delta = %"PRId64") for partition %d", threadID,
+         fifoId, ebpSegmentInfo->PTS, expectedPTS, deltaPTS, ebpSegmentInfo->partitionId);
+      reportAddErrorLogArgs ("EBPSegmentAnalysisThread %d: FIFO %d: PTS %"PRId64" differs from expected PTS %"PRId64" (delta = %"PRId64") for partition %d", threadID,
+         fifoId, ebpSegmentInfo->PTS, expectedPTS, deltaPTS, ebpSegmentInfo->partitionId);
       streamInfo->streamPassFail = 0;
    }
          

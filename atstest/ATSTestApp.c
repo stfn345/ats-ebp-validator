@@ -173,7 +173,7 @@ int modBoundaryInfoArray (ebp_descriptor_t * ebpDescriptor, ebp_t *ebp, ebp_boun
             return -1;
          }
 
-         boundaryInfoArray[partition->partition_id].isBoundary = partition->boundary_flag;
+         boundaryInfoArray[partition->partition_id].isBoundary = 1;
          boundaryInfoArray[partition->partition_id].isImplicit = !(partition->ebp_data_explicit_flag);
          boundaryInfoArray[partition->partition_id].implicitPID = partition->ebp_pid;
 
@@ -542,11 +542,9 @@ static int pat_processor(mpeg2ts_stream_t *m2s, void *arg)
    LOG_INFO_ARGS ("pat_processor: %d", vqarray_length(m2s->programs));
    g_bPATFound = 1;
 
-   LOG_INFO ("pat_processor: GORP1");
    for (int i = 0; i < vqarray_length(m2s->programs); i++)
    {
       mpeg2ts_program_t *m2p = vqarray_get(m2s->programs, i);
-      LOG_INFO ("pat_processor: GORP2");
 
       if (m2p == NULL) continue;
       m2p->pmt_processor =  (pmt_processor_t)pmt_processor;
@@ -1550,8 +1548,13 @@ void printStreamInfo(int numIngests, int numStreams, ebp_stream_info_t **streamI
 
 int main(int argc, char** argv) 
 {
-   // GORP: check return code
-   initTestConfig();
+   printf ("CableLabs ATS EBP Conformance Test Tool v1.0.0.1\n\n");
+
+   int nReturn = initTestConfig();
+   if (nReturn != 0)
+   {
+      printf ("Error reading ATSTestApp.props file!\n");
+   }
    tslib_loglevel = g_ATSTestAppConfig.logLevel;
 
    if (argc < 2)
@@ -1608,7 +1611,7 @@ int main(int argc, char** argv)
        }
    }
 
-   int nReturn = set_log_file(g_ATSTestAppConfig.logFilePath);
+   nReturn = set_log_file(g_ATSTestAppConfig.logFilePath);
    if (nReturn != 0)
    {
       LOG_INFO ("ERROR opening log file");

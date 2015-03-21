@@ -43,7 +43,8 @@ typedef struct
 void cleanupEBPSegmentInfo (ebp_segment_info_t *ebpSegmentInfo);
 void *EBPSegmentAnalysisThreadProc(void *threadParams);
 int syncIncomingStreams (int threadID, int numFiles, ebp_stream_info_t **streamInfos, int *fifoNotActive);
-void checkDistanceFromLastPTS(int threadID, ebp_stream_info_t *streamInfo, ebp_segment_info_t *ebpSegmentInfo);
+void checkDistanceFromLastPTS(int threadID, ebp_stream_info_t *streamInfo, ebp_segment_info_t *ebpSegmentInfo,
+                              int fifoId);
 
 
 #endif  // __H_EBPSEGMENTANALYSISTHREAD_67511FLKKJF

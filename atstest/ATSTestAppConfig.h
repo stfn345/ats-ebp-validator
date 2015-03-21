@@ -24,8 +24,10 @@ typedef struct
    int logLevel;
    char *logFilePath;
    unsigned int ebpPrereadSearchTimeMsecs;
-   unsigned int ebpAllowedPTSJitterSecs;
-   unsigned int ebpSCTE35PTSJitterSecs;
+//   unsigned int ebpAllowedPTSJitterSecs;
+//   unsigned int ebpSCTE35PTSJitterSecs;
+   float ebpAllowedPTSJitterSecs;
+   float ebpSCTE35PTSJitterSecs;
 
    int socketRcvBufferSz;
    int ingestCircularBufferSz;

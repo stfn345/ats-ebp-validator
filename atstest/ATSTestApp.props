@@ -12,17 +12,17 @@ ebpPrereadSearchTimeMsecs = 10000
 
 // allowed time difference between expected EBP location (from EBP descriptor, if present)
 // and actual EBP location
-ebpAllowedPTSJitterSecs = 2
+ebpAllowedPTSJitterSecs = 0.5
 
 // allowed time difference between expected EBP location (from SCTE35, if present)
 // and actual EBP location
-ebpSCTE35PTSJitterSecs = 2
+ebpSCTE35PTSJitterSecs = 0.5
 
 // for multicast case, size of UDP receive buffer
 socketRcvBufferSz = 2000000
 
 // size of buffer holding transport stream data waiting to be processed
-ingestCircularBufferSz = 188000
+ingestCircularBufferSz = 1880000
 
 
 

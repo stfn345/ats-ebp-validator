@@ -32,8 +32,8 @@ void printTestConfig()
    LOG_INFO ("ATS Test Config:");
    LOG_INFO_ARGS ("     logFilePath = %s", g_ATSTestAppConfig.logFilePath);
    LOG_INFO_ARGS ("     ebpPrereadSearchTimeMsecs = %d", g_ATSTestAppConfig.ebpPrereadSearchTimeMsecs);
-   LOG_INFO_ARGS ("     ebpAllowedPTSJitterSecs = %d", g_ATSTestAppConfig.ebpAllowedPTSJitterSecs);
-   LOG_INFO_ARGS ("     ebpSCTE35PTSJitterSecs = %d", g_ATSTestAppConfig.ebpSCTE35PTSJitterSecs);
+   LOG_INFO_ARGS ("     ebpAllowedPTSJitterSecs = %f", g_ATSTestAppConfig.ebpAllowedPTSJitterSecs);
+   LOG_INFO_ARGS ("     ebpSCTE35PTSJitterSecs = %f", g_ATSTestAppConfig.ebpSCTE35PTSJitterSecs);
    LOG_INFO_ARGS ("     socketRcvBufferSz = %d", g_ATSTestAppConfig.socketRcvBufferSz);
    LOG_INFO_ARGS ("     ingestCircularBufferSz = %d", g_ATSTestAppConfig.ingestCircularBufferSz);
    LOG_INFO_ARGS ("     logLevel = %d", g_ATSTestAppConfig.logLevel);
@@ -56,8 +56,8 @@ void setTestConfigDefaults()
 
 
    g_ATSTestAppConfig.ebpPrereadSearchTimeMsecs = 10000000;
-   g_ATSTestAppConfig.ebpAllowedPTSJitterSecs = 2;
-   g_ATSTestAppConfig.ebpSCTE35PTSJitterSecs = 2;
+   g_ATSTestAppConfig.ebpAllowedPTSJitterSecs = 2.0;
+   g_ATSTestAppConfig.ebpSCTE35PTSJitterSecs = 2.0;
 
    g_ATSTestAppConfig.socketRcvBufferSz = 2000000;
    g_ATSTestAppConfig.ingestCircularBufferSz = 1880000;
@@ -133,11 +133,11 @@ int readTestConfigFile()
          }
          else if (strcmp("ebpAllowedPTSJitterSecs", nameTrimmed) == 0)
          {
-            g_ATSTestAppConfig.ebpAllowedPTSJitterSecs = strtoul (valueTrimmed, NULL, 10);
+            g_ATSTestAppConfig.ebpAllowedPTSJitterSecs = atof (valueTrimmed);
          }
          else if (strcmp("ebpSCTE35PTSJitterSecs", nameTrimmed) == 0)
          {
-            g_ATSTestAppConfig.ebpSCTE35PTSJitterSecs = strtoul (valueTrimmed, NULL, 10);
+            g_ATSTestAppConfig.ebpSCTE35PTSJitterSecs = atof (valueTrimmed);
          }
          else if (strcmp("socketRcvBufferSz", nameTrimmed) == 0)
          {

@@ -52,7 +52,7 @@ int register_descriptor(descriptor_table_entry_t *desc)
 // "factory methods"
 int read_descriptor_loop(vqarray_t *desc_list, bs_t *b, int length) 
 { 
-   LOG_INFO_ARGS ("read_descriptor_loop: length = %d", length);
+   LOG_DEBUG_ARGS ("read_descriptor_loop: length = %d", length);
    int desc_start = bs_pos(b); 
    
    while (length > bs_pos(b) - desc_start) 
@@ -105,7 +105,7 @@ descriptor_t* descriptor_read(descriptor_t *desc, bs_t *b)
    desc->tag = bs_read_u8(b);
    desc->length = bs_read_u8(b);
 
-   LOG_INFO_ARGS ("descriptor_read: tag = %d, length = %d", desc->tag, desc->length);
+   LOG_DEBUG_ARGS ("descriptor_read: tag = %d, length = %d", desc->tag, desc->length);
 /*   for (int i=0; i<desc->length; i++)
    {
       printf ("0x%x ", b->p[i]);

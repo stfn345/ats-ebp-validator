@@ -57,36 +57,43 @@ static int validate_ts_packet(ts_packet_t *ts, elementary_stream_info_t *es_info
 
       scte35_splice_info_section* splice_info = scte35_splice_info_section_new(); 
       
-      int returnCode = scte35_splice_info_section_read(splice_info, ts->payload.bytes + 1, ts->payload.len-1);
+      if (!ts->header.payload_unit_start_indicator)
+      {
+         LOG_ERROR_ARGS("IngestThread %d: SCTE35 table: payload_unit_start_indicator not set!", ebpIngestThreadParams->threadNum);
+         reportAddErrorLogArgs("IngestThread %d: SCTE35 table: payload_unit_start_indicator not set!", ebpIngestThreadParams->threadNum);
+         return 0;
+      }
+
+      uint8_t payloadStartPtr = (ts->payload.bytes)[0];
+
+      int returnCode = scte35_splice_info_section_read(splice_info, ts->payload.bytes + 1 + payloadStartPtr, ts->payload.len - 1 - payloadStartPtr);
       if (returnCode != 0)
       {
          LOG_ERROR_ARGS("IngestThread %d: Error parsing SCTE35 table", ebpIngestThreadParams->threadNum);
          reportAddErrorLogArgs("IngestThread %d: Error parsing SCTE35 table", ebpIngestThreadParams->threadNum);
+         return 0;
       }
-      else
+
+      scte35_splice_info_section_print_stdout(splice_info); 
+
+      if (is_splice_insert (splice_info))
       {
-         scte35_splice_info_section_print_stdout(splice_info); 
-
-         if (is_splice_insert (splice_info))
+         uint64_t PTS = get_splice_insert_PTS (splice_info);
+         if (PTS != 0)
          {
-            uint64_t PTS = get_splice_insert_PTS (splice_info);
-            if (PTS != 0)
+            // if splice insert message, add to SCTE35 PTS lists for all partitions
+            int arrayIndex = get2DArrayIndex (ebpIngestThreadParams->threadNum, 0, ebpIngestThreadParams->numStreams);    
+            ebp_stream_info_t **streamInfos = &((ebpIngestThreadParams->allStreamInfos)[arrayIndex]);
+
+            for (int i=0; i<ebpIngestThreadParams->numStreams; i++)
             {
-               // if splice insert message, add to SCTE35 PTS lists for all partitions
-               int arrayIndex = get2DArrayIndex (ebpIngestThreadParams->threadNum, 0, ebpIngestThreadParams->numStreams);    
-               ebp_stream_info_t **streamInfos = &((ebpIngestThreadParams->allStreamInfos)[arrayIndex]);
-
-               for (int i=0; i<ebpIngestThreadParams->numStreams; i++)
-               {
-                  addSCTE35Point_AllBoundaries (ebpIngestThreadParams->threadNum, streamInfos[i], PTS);
-               }
-
+               addSCTE35Point_AllBoundaries (ebpIngestThreadParams->threadNum, streamInfos[i], PTS);
             }
          }
-         
       }
 
       scte35_splice_info_section_free (splice_info);
+      return 0;
    }
 
    return 1;
@@ -125,7 +132,7 @@ static void printBoundaryInfoArray(ebp_boundary_info_t *boundaryInfoArray)
 
 static int validate_pes_packet(pes_packet_t *pes, elementary_stream_info_t *esi, vqarray_t *ts_queue, void *arg)
 {
-   LOG_INFO("validate_pes_packet");
+   LOG_DEBUG("validate_pes_packet");
    // Get the first TS packet and check it for EBP
    ts_packet_t *first_ts = (ts_packet_t*)vqarray_get(ts_queue,0);
    if (first_ts == NULL)
@@ -149,8 +156,8 @@ static int validate_pes_packet(pes_packet_t *pes, elementary_stream_info_t *esi,
    
    if (fifo == NULL)
    {
-      // this should never happen -- maybe this should be fatal
-      LOG_ERROR_ARGS("IngestThread %d: FAIL: Cannot find fifo for PID %d (%s)", 
+      // this can happen if the PES packet is SCTE35
+      LOG_WARN_ARGS("IngestThread %d: FAIL: Cannot find fifo for PID %d (%s)", 
          ebpIngestThreadParams->threadNum, esi->elementary_PID, getStreamTypeDesc (esi));
       reportAddErrorLogArgs("IngestThread %d: FAIL: Cannot find fifo for PID %d (%s)", 
          ebpIngestThreadParams->threadNum, esi->elementary_PID, getStreamTypeDesc (esi));
@@ -840,7 +847,7 @@ int detectBoundary(int threadNum, ebp_t* ebp, ebp_stream_info_t *streamInfo, uin
             {
                // check against SCTE35
                
-               checkEBPAgainstSCTE35Points (ebpBoundaryInfo[i].listSCTE35, PTS, g_ATSTestAppConfig.ebpSCTE35PTSJitterSecs, threadNum,
+               checkEBPAgainstSCTE35Points (ebpBoundaryInfo[i].listSCTE35, PTS, g_ATSTestAppConfig.ebpSCTE35PTSJitterSecs * 90000, threadNum,
                   i /* partitionID */, streamInfo->PID);
             }
          }
@@ -945,10 +952,10 @@ int detectBoundary(int threadNum, ebp_t* ebp, ebp_stream_info_t *streamInfo, uin
 
    for (int i=0; i<EBP_NUM_PARTITIONS; i++)
    {
-      if (ebpBoundaryInfo[i].listSCTE35 != NULL)
+      if (isBoundary[i] && ebpBoundaryInfo[i].listSCTE35 != NULL)
       {
          // check against SCTE35  
-         checkEBPAgainstSCTE35Points (ebpBoundaryInfo[i].listSCTE35, PTS, g_ATSTestAppConfig.ebpSCTE35PTSJitterSecs, threadNum,
+         checkEBPAgainstSCTE35Points (ebpBoundaryInfo[i].listSCTE35, PTS, g_ATSTestAppConfig.ebpSCTE35PTSJitterSecs * 90000, threadNum,
             i /* partitionID */, streamInfo->PID);
       }
    }
@@ -1069,14 +1076,20 @@ void addSCTE35Point (varray_t* scte35List, uint64_t PTS, int threadNum, int part
    }
 }
 
-void checkPTSAgainstSCTE35Points (varray_t* scte35List, uint64_t PTS, uint64_t deltaSCTE35PTS, int threadNum,
+int checkPTSAgainstSCTE35Points (varray_t* scte35List, uint64_t PTS, uint64_t deltaSCTE35PTS, int threadNum,
    int partitionID, uint32_t PID)
 {
    // check if PTS has passed entries in SCTE35 list
+//   LOG_INFO_ARGS("IngestThread %d: checkPTSAgainstSCTE35Points: PTS = %"PRId64" for partition %d: PID %d, deltaSCTE35PTS = %"PRId64"", 
+//      threadNum, PTS, partitionID, PID, deltaSCTE35PTS);
+
+   int nReturnCode = 0;
 
    for (int i=0; i<varray_length(scte35List); i++)
    {
       uint64_t *SCTE35PTS = (uint64_t *) varray_get (scte35List, i);
+//      LOG_INFO_ARGS("IngestThread %d: checkPTSAgainstSCTE35Points: *SCTE35PTS = %"PRId64"", 
+//         threadNum, *SCTE35PTS);
 
       if (PTS > *SCTE35PTS + deltaSCTE35PTS)
       {
@@ -1089,12 +1102,16 @@ void checkPTSAgainstSCTE35Points (varray_t* scte35List, uint64_t PTS, uint64_t d
 
          varray_remove (scte35List, i);
          free (SCTE35PTS);
+
+         nReturnCode = -1;
       }
       else
       {
          break;
       }
    }
+
+   return nReturnCode;
 }
 
 void checkEBPAgainstSCTE35Points (varray_t* scte35List, uint64_t PTS, uint64_t deltaSCTE35PTS, int threadNum,
@@ -1102,11 +1119,16 @@ void checkEBPAgainstSCTE35Points (varray_t* scte35List, uint64_t PTS, uint64_t d
 {
    // check if PTS is sufficiently near the SCTE35 points
 
+//   LOG_INFO_ARGS("IngestThread %d: checkEBPAgainstSCTE35Points: PTS = %"PRId64" for partition %d: PID %d, deltaSCTE35PTS = %"PRId64"", 
+//      threadNum, PTS, partitionID, PID, deltaSCTE35PTS);
+
    for (int i=0; i<varray_length(scte35List); i++)
    {
       uint64_t *SCTE35PTS = (uint64_t *) varray_get (scte35List, i);
+//      LOG_INFO_ARGS("IngestThread %d: checkEBPAgainstSCTE35Points: *SCTE35PTS = %"PRId64"", 
+//         threadNum, *SCTE35PTS);
 
-      if (PTS >= *SCTE35PTS + deltaSCTE35PTS && PTS <= *SCTE35PTS + deltaSCTE35PTS)
+      if (PTS >= *SCTE35PTS - deltaSCTE35PTS && PTS <= *SCTE35PTS + deltaSCTE35PTS)
       {
          // match -- remove entry from SCTE35 list
 
@@ -1134,6 +1156,11 @@ void addSCTE35Point_AllBoundaries (int threadNum, ebp_stream_info_t *streamInfo,
 
    for (int i=0; i<EBP_NUM_PARTITIONS; i++)
    {
+      if (!ebpBoundaryInfo[i].isBoundary)
+      {
+         continue;
+      }
+
       if (ebpBoundaryInfo[i].listSCTE35 == NULL)
       {
          ebpBoundaryInfo[i].listSCTE35 = varray_new();
@@ -1152,8 +1179,12 @@ void checkPTSAgainstSCTE35Points_AllBoundaries (int threadNum, ebp_stream_info_t
       {
          continue;
       }  
-      checkPTSAgainstSCTE35Points (ebpBoundaryInfo[i].listSCTE35, PTS, g_ATSTestAppConfig.ebpSCTE35PTSJitterSecs, 
-         threadNum, i /* partitionID */, streamInfo->PID);
+      
+      if (checkPTSAgainstSCTE35Points (ebpBoundaryInfo[i].listSCTE35, PTS, g_ATSTestAppConfig.ebpSCTE35PTSJitterSecs * 90000, 
+         threadNum, i /* partitionID */, streamInfo->PID) != 0)
+      {
+         streamInfo->streamPassFail = 0;
+      }
    }
 }
 
