@@ -88,7 +88,8 @@ typedef struct {
 
 program_association_section_t* program_association_section_new(); 
 void program_association_section_free(program_association_section_t *pas); 
-int program_association_section_read(program_association_section_t *pas, uint8_t *buf, size_t buf_len, uint32_t payload_unit_start_indicator); 
+int program_association_section_read(program_association_section_t *pas, uint8_t *buf, size_t buf_len, 
+                                     uint32_t payload_unit_start_indicator, psi_table_buffer_t *patBuffer); 
 int program_association_section_print(const program_association_section_t *pas, char *str, size_t str_len); 
 
 typedef struct {
@@ -108,7 +109,8 @@ typedef struct {
 
 conditional_access_section_t* conditional_access_section_new();
 void conditional_access_section_free(conditional_access_section_t *cas);
-int conditional_access_section_read(conditional_access_section_t *cas, uint8_t *buf, size_t buf_len, uint32_t payload_unit_start_indicator);
+int conditional_access_section_read(conditional_access_section_t *cas, uint8_t *buf, size_t buf_len, 
+                                    uint32_t payload_unit_start_indicator, psi_table_buffer_t *catBuffer);
 int conditional_access_section_print(const conditional_access_section_t *cas, char *str, size_t str_len); 
  
 // PMT
@@ -143,6 +145,9 @@ int program_map_section_read(program_map_section_t *pms, uint8_t *buf, size_t bu
                              psi_table_buffer_t *pmtBuffer); 
 int program_map_section_write(program_map_section_t *pms, uint8_t *buf, size_t buf_size); 
 int program_map_section_print(program_map_section_t *pms, char *str, size_t str_len); 
+
+void resetPSITableBuffer(psi_table_buffer_t *psiTableBuffer);
+
 
 // stream types
 #define STREAM_TYPE_MPEG1_VIDEO             0x01

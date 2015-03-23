@@ -18,6 +18,8 @@
 
 #include "scte35.h"
 #include "log.h"
+#include "ATSTestReport.h"
+
 
 scte35_splice_info_section* scte35_splice_info_section_new()
 {
@@ -96,16 +98,100 @@ uint64_t get_splice_insert_PTS (scte35_splice_info_section *sis)
 }
 
 
-int scte35_splice_info_section_read(scte35_splice_info_section *sis, uint8_t *buf, size_t buf_len)
+scte35_splice_insert * get_splice_insert (scte35_splice_info_section *sis)
 {
-   bs_t *b = bs_new(buf, buf_len); 
-   
+   if (sis->splice_command_type == 0x05)
+   {
+      return (scte35_splice_insert *)(sis->splice_command);
+   }
+
+   return 0;
+}
+
+
+int scte35_splice_info_section_read(scte35_splice_info_section *sis, uint8_t *buf, size_t buf_len,
+   uint32_t payload_unit_start_indicator, psi_table_buffer_t *scte35TableBuffer)
+{
+   if (!payload_unit_start_indicator &&  scte35TableBuffer->buffer == NULL)
+   {
+      // this TS packet is not start of table, and we have no cached table data
+      LOG_WARN ("scte35_splice_info_section_read: payload_unit_start_indicator not set and no cached data");
+      return 0;
+   }
+
+   bs_t *b = NULL;
+
+   if (payload_unit_start_indicator)
+   {
+      uint8_t payloadStartPtr = buf[0];
+      buf += (payloadStartPtr + 1);
+      buf_len -= (payloadStartPtr + 1);
+      LOG_DEBUG_ARGS ("scte35_splice_info_section_read: payloadStartPtr = %d", payloadStartPtr);
+   }
+
+   // check for pat spanning multiple TS packets
+   if (scte35TableBuffer->buffer != NULL)
+   {
+      LOG_DEBUG_ARGS ("scte35_splice_info_section_read: scte35TableBuffer detected: scte35TableBufferAllocSz = %d, scte35TableBufferUsedSz = %d", 
+         scte35TableBuffer->bufferAllocSz, scte35TableBuffer->bufferUsedSz);
+      size_t numBytesToCopy = buf_len;
+      if (buf_len > (scte35TableBuffer->bufferAllocSz - scte35TableBuffer->bufferUsedSz))
+      {
+         numBytesToCopy = scte35TableBuffer->bufferAllocSz - scte35TableBuffer->bufferUsedSz;
+      }
+         
+      LOG_DEBUG_ARGS ("scte35_splice_info_section_read: copying %d bytes to catBuffer", numBytesToCopy);
+      memcpy (scte35TableBuffer->buffer + scte35TableBuffer->bufferUsedSz, buf, numBytesToCopy);
+      scte35TableBuffer->bufferUsedSz += numBytesToCopy;
+      
+      if (scte35TableBuffer->bufferUsedSz < scte35TableBuffer->bufferAllocSz)
+      {
+         LOG_DEBUG ("scte35_splice_info_section_read: catBuffer not yet full -- returning");
+         return 0;
+      }
+
+      b = bs_new(scte35TableBuffer->buffer, scte35TableBuffer->bufferUsedSz);
+   }
+   else
+   {
+      b = bs_new(buf, buf_len);
+      sleep (1);
+   }
+            
    sis->table_id = bs_read_u8(b); 
+   if (SCTE35_SPLICE_TABLE_ID != sis->table_id)
+   {
+      LOG_ERROR_ARGS ("scte35_splice_info_section_read: FAIL: table_id does not equal 0x%x", SCTE35_SPLICE_TABLE_ID);
+      reportAddErrorLogArgs ("scte35_splice_info_section_read: FAIL: table_id does not equal 0x%x", SCTE35_SPLICE_TABLE_ID);
+      return -1;
+   }
 
    sis->section_syntax_indicator = bs_read_u1(b);
    sis->private_indicator = bs_read_u1(b);
    bs_skip_u(b, 2);  // reserved
    sis->section_length = bs_read_u(b, 12); 
+
+   if (sis->section_length > bs_bytes_left(b))
+   {
+      LOG_DEBUG ("scte35_splice_info_section_read: Detected section spans more than one TS packet -- allocating buffer");
+
+      if (scte35TableBuffer->buffer != NULL)
+      {
+         // should never get here
+         LOG_ERROR ("scte35_splice_info_section_read: unexpected catBufffer");
+         reportAddErrorLog ("scte35_splice_info_section_read: unexpected catBufffer");
+         resetPSITableBuffer(scte35TableBuffer);
+      }
+
+      scte35TableBuffer->bufferAllocSz = sis->section_length + 3;
+      scte35TableBuffer->buffer = (uint8_t *)calloc (sis->section_length + 3, 1);
+      memcpy (scte35TableBuffer->buffer, buf, buf_len);
+      scte35TableBuffer->bufferUsedSz = buf_len;
+
+      bs_free (b);
+      return 0;
+   }
+
    sis->protocol_version = bs_read_u(b, 8); 
    sis->encrypted_packet = bs_read_u(b, 1); 
    sis->encryption_algorithm = bs_read_u(b, 6); 
@@ -162,8 +248,10 @@ int scte35_splice_info_section_read(scte35_splice_info_section *sis, uint8_t *bu
    }
 
    sis->CRC_32 = bs_read_u32(b);
+ 
+   resetPSITableBuffer(scte35TableBuffer);
 
-   return 0;
+   return 1;
 }
 
 void scte35_splice_info_section_print_stdout(const scte35_splice_info_section *sis)
@@ -249,6 +337,7 @@ void scte35_splice_insert_print_stdout (const scte35_splice_insert *splice_inser
 
    if (splice_insert->components != NULL)
    {
+      LOG_INFO_ARGS ("component length = %d", vqarray_length(splice_insert->components));
       for (int i=0; i<vqarray_length(splice_insert->components); i++)
       {
          scte35_splice_insert_component *component = (scte35_splice_insert_component *) vqarray_get (splice_insert->components, i);
@@ -260,6 +349,10 @@ void scte35_splice_insert_print_stdout (const scte35_splice_insert *splice_inser
             LOG_INFO_ARGS ("         component pts_time = %"PRId64"", component->splice_time->pts_time);
          }
       }
+   }
+   else
+   {
+      LOG_INFO ("component length = 0");
    }
    LOG_INFO ("");
 }

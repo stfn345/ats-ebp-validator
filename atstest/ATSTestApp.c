@@ -300,29 +300,6 @@ int modBoundaryInfoArray (ebp_descriptor_t * ebpDescriptor, ebp_t *ebp, ebp_boun
 
 static int handle_ts_packet(ts_packet_t *ts, elementary_stream_info_t *es_info, void *arg)
 {
-   /*
-   if (IS_SCTE35_STREAM(es_info->stream_type))
-   {
-      printf ("GORPGORP: SCTE35 table detected\n");
-      printf ("GORPGORP: SCTE35 table ID = %x\n", (ts->payload.bytes + 1)[0]);
-      printf ("GORPGORP: SCTE35 len = %d\n", (ts->payload.len - 1));
-
-      scte35_splice_info_section* splice_info = scte35_splice_info_section_new(); 
-      
-      int returnCode = scte35_splice_info_section_read(splice_info, ts->payload.bytes + 1, ts->payload.len-1);
-      if (returnCode != 0)
-      {
-         printf ("returnCode = %d\n", returnCode);
-      }
-
-      // GORP: store PTS somewhere PTS reasonable?
-
-      scte35_splice_info_section_print_stdout(splice_info); 
-
-      scte35_splice_info_section_free (splice_info);
-   }
-   */
-
    return 1;
 }
 
@@ -649,7 +626,7 @@ int prereadIngestStreams(int numIngestStreams, circular_buffer_t **ingestBuffers
 {
    LOG_INFO ("prereadIngestStreams: entering");
 
-   int num_packets = 4096;  // GORP: tune this?
+   int num_packets = 4096;
    int ts_buf_sz = TS_SIZE * num_packets;
    uint8_t *ts_buf = malloc(ts_buf_sz);
 
@@ -1158,7 +1135,7 @@ int startSocketReceiveThreads (int numIngestStreams, char **mcastAddrs, circular
          return -1;
       }
 
-      (*ebpSocketReceiveThreadParams)[threadIndex] = (ebp_socket_receive_thread_params_t *)malloc (sizeof(ebp_socket_receive_thread_params_t));
+      (*ebpSocketReceiveThreadParams)[threadIndex] = (ebp_socket_receive_thread_params_t *)calloc (1, sizeof(ebp_socket_receive_thread_params_t));
       (*ebpSocketReceiveThreadParams)[threadIndex]->threadNum = 500 + threadIndex;
       (*ebpSocketReceiveThreadParams)[threadIndex]->cb = ingestBuffers[threadIndex];
       (*ebpSocketReceiveThreadParams)[threadIndex]->ipAddr = ip;
@@ -1166,7 +1143,7 @@ int startSocketReceiveThreads (int numIngestStreams, char **mcastAddrs, circular
       (*ebpSocketReceiveThreadParams)[threadIndex]->port = port;
       (*ebpSocketReceiveThreadParams)[threadIndex]->enableStreamDump = enableStreamDump;
 
-      (*socketReceiveThreads)[threadIndex] = (pthread_t *)malloc (sizeof (pthread_t));
+      (*socketReceiveThreads)[threadIndex] = (pthread_t *)calloc (1, sizeof (pthread_t));
       pthread_t *socketThread = (*socketReceiveThreads)[threadIndex];
       LOG_INFO_ARGS("Main:startSocketReceiveThreads: creating socket receive thread %d, port = %d", 
          (*ebpSocketReceiveThreadParams)[threadIndex]->threadNum, port);
@@ -1242,12 +1219,12 @@ int startThreads_FileIngest(int numFiles, int totalNumStreams, ebp_stream_info_t
          streamInfos[i] = streamInfoArray[arrayIndex];
       }
       
-      ebp_segment_analysis_thread_params_t *ebpSegmentAnalysisThreadParams = (ebp_segment_analysis_thread_params_t *)malloc (sizeof(ebp_segment_analysis_thread_params_t));
+      ebp_segment_analysis_thread_params_t *ebpSegmentAnalysisThreadParams = (ebp_segment_analysis_thread_params_t *)calloc (1, sizeof(ebp_segment_analysis_thread_params_t));
       ebpSegmentAnalysisThreadParams->threadID = 100 + threadIndex;
       ebpSegmentAnalysisThreadParams->numFiles = numFiles;
       ebpSegmentAnalysisThreadParams->streamInfos = streamInfos;
 
-      (*analysisThreads)[threadIndex] = (pthread_t *)malloc (sizeof (pthread_t));
+      (*analysisThreads)[threadIndex] = (pthread_t *)calloc (1, sizeof (pthread_t));
       pthread_t *analyzerThread = (*analysisThreads)[threadIndex];
       LOG_INFO_ARGS("Main:startThreads_FileIngest: creating analyzer thread %d", threadIndex);
       returnCode = pthread_create(analyzerThread, threadAttr, EBPSegmentAnalysisThreadProc, (void *)ebpSegmentAnalysisThreadParams);
@@ -1270,8 +1247,8 @@ int startThreads_FileIngest(int numFiles, int totalNumStreams, ebp_stream_info_t
       ebp_stream_info_t **streamInfos = &(streamInfoArray[arrayIndex]);
              
       // pass ALL stream infos so that threads can do implicit triggering on each other
-      ebp_file_ingest_thread_params_t *ebpFileIngestThreadParams = (ebp_file_ingest_thread_params_t *)malloc (sizeof(ebp_file_ingest_thread_params_t));
-      ebpFileIngestThreadParams->ebpIngestThreadParams = (ebp_ingest_thread_params_t *)malloc (sizeof(ebp_ingest_thread_params_t));
+      ebp_file_ingest_thread_params_t *ebpFileIngestThreadParams = (ebp_file_ingest_thread_params_t *)calloc (1, sizeof(ebp_file_ingest_thread_params_t));
+      ebpFileIngestThreadParams->ebpIngestThreadParams = (ebp_ingest_thread_params_t *)calloc (1, sizeof(ebp_ingest_thread_params_t));
       ebpFileIngestThreadParams->ebpIngestThreadParams->threadNum = threadIndex;  // same as file index
       ebpFileIngestThreadParams->ebpIngestThreadParams->numStreams = totalNumStreams;
       ebpFileIngestThreadParams->ebpIngestThreadParams->numIngests = numFiles;
@@ -1280,7 +1257,7 @@ int startThreads_FileIngest(int numFiles, int totalNumStreams, ebp_stream_info_t
       ebpFileIngestThreadParams->ebpIngestThreadParams->ingestPassFail = &(filePassFails[threadIndex]);
 
 
-      (*fileIngestThreads)[threadIndex] = (pthread_t *)malloc (sizeof (pthread_t));
+      (*fileIngestThreads)[threadIndex] = (pthread_t *)calloc (1, sizeof (pthread_t));
       pthread_t *fileIngestThread = (*fileIngestThreads)[threadIndex];
       LOG_INFO_ARGS("Main:startThreads_FileIngest: creating fileIngest thread %d", threadIndex);
       returnCode = pthread_create(fileIngestThread, threadAttr, EBPFileIngestThreadProc, (void *)ebpFileIngestThreadParams);
@@ -1328,12 +1305,12 @@ int startThreads_StreamIngest(int numIngestStreams, int totalNumStreams, ebp_str
          streamInfos[i] = streamInfoArray[arrayIndex];
       }
       
-      ebp_segment_analysis_thread_params_t *ebpSegmentAnalysisThreadParams = (ebp_segment_analysis_thread_params_t *)malloc (sizeof(ebp_segment_analysis_thread_params_t));
+      ebp_segment_analysis_thread_params_t *ebpSegmentAnalysisThreadParams = (ebp_segment_analysis_thread_params_t *)calloc (1, sizeof(ebp_segment_analysis_thread_params_t));
       ebpSegmentAnalysisThreadParams->threadID = 100 + threadIndex;
       ebpSegmentAnalysisThreadParams->numFiles = numIngestStreams;
       ebpSegmentAnalysisThreadParams->streamInfos = streamInfos;
 
-      (*analysisThreads)[threadIndex] = (pthread_t *)malloc (sizeof (pthread_t));
+      (*analysisThreads)[threadIndex] = (pthread_t *)calloc (1, sizeof (pthread_t));
       pthread_t *analyzerThread = (*analysisThreads)[threadIndex];
       LOG_INFO_ARGS("Main:startThreads_StreamIngest: creating analyzer thread %d", threadIndex);
       returnCode = pthread_create(analyzerThread, threadAttr, EBPSegmentAnalysisThreadProc, (void *)ebpSegmentAnalysisThreadParams);
@@ -1358,8 +1335,8 @@ int startThreads_StreamIngest(int numIngestStreams, int totalNumStreams, ebp_str
       ebp_stream_info_t **streamInfos = &(streamInfoArray[arrayIndex]);
              
       // pass ALL stream infos so that threads can do implicit triggering on each other
-      ebp_stream_ingest_thread_params_t *ebpStreamIngestThreadParams = (ebp_stream_ingest_thread_params_t *)malloc (sizeof(ebp_stream_ingest_thread_params_t));
-      ebpStreamIngestThreadParams->ebpIngestThreadParams = (ebp_ingest_thread_params_t *)malloc (sizeof(ebp_ingest_thread_params_t));
+      ebp_stream_ingest_thread_params_t *ebpStreamIngestThreadParams = (ebp_stream_ingest_thread_params_t *)calloc (1, sizeof(ebp_stream_ingest_thread_params_t));
+      ebpStreamIngestThreadParams->ebpIngestThreadParams = (ebp_ingest_thread_params_t *)calloc (1, sizeof(ebp_ingest_thread_params_t));
       ebpStreamIngestThreadParams->ebpIngestThreadParams->threadNum = threadIndex;  // same as file index
       ebpStreamIngestThreadParams->ebpIngestThreadParams->numStreams = totalNumStreams;
       ebpStreamIngestThreadParams->ebpIngestThreadParams->numIngests = numIngestStreams;
@@ -1369,7 +1346,7 @@ int startThreads_StreamIngest(int numIngestStreams, int totalNumStreams, ebp_str
 
       (*ebpStreamIngestThreadParamsOut)[threadIndex] = ebpStreamIngestThreadParams;
 
-      (*streamIngestThreads)[threadIndex] = (pthread_t *)malloc (sizeof (pthread_t));
+      (*streamIngestThreads)[threadIndex] = (pthread_t *)calloc (1, sizeof (pthread_t));
       pthread_t *streamIngestThread = (*streamIngestThreads)[threadIndex];
       LOG_INFO_ARGS("Main:startThreads_StreamIngest: creating streamIngest thread %d", threadIndex);
       returnCode = pthread_create(streamIngestThread, threadAttr, EBPStreamIngestThreadProc, (void *)ebpStreamIngestThreadParams);

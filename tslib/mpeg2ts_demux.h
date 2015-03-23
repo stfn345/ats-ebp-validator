@@ -96,6 +96,12 @@ struct _mpeg2ts_stream_
    vqarray_t *ca_systems;              /// list of conditional access systems in this multiplex
    void *arg;                          /// argument for PAT/CAT callbacks
    arg_destructor_t arg_destructor;    /// destructor for the callback argument
+
+   // used for decoding pmt split among multiple TS packets
+   psi_table_buffer_t patBuffer;
+
+   // used for decoding pmt split among multiple TS packets
+   psi_table_buffer_t catBuffer;
 }; 
 
 typedef struct _mpeg2ts_stream_  mpeg2ts_stream_t; 

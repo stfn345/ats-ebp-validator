@@ -78,7 +78,7 @@ void *EBPStreamIngestThreadProc(void *threadParams)
    m2s->arg = ebpStreamIngestThreadParams->ebpIngestThreadParams;
    m2s->arg_destructor = NULL;
 
-   int num_packets = 4096;  // GORP
+   int num_packets = 4096;
    int num_bytes = 0;
    int ts_buf_sz = num_packets * TS_SIZE;
    uint8_t *ts_buf = malloc(num_packets * TS_SIZE);

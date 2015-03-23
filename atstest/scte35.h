@@ -22,6 +22,8 @@
 #include <vqarray.h>
 #include <ts.h>
 #include <descriptors.h>
+#include <psi.h>
+
 
 typedef struct 
 {
@@ -139,15 +141,17 @@ typedef struct
 } scte35_private_command;
 
 
-#define SCTE35_DESCRIPTOR 0x99  // GORP
 #define SCTE35_SPLICE_TABLE_ID 0xFC  // GORP??
 
 scte35_splice_info_section* scte35_splice_info_section_new(); 
 void scte35_splice_info_section_free(scte35_splice_info_section *sis); 
-int scte35_splice_info_section_read(scte35_splice_info_section *sis, uint8_t *buf, size_t buf_len); 
+int scte35_splice_info_section_read(scte35_splice_info_section *sis, uint8_t *buf, size_t buf_len, 
+    uint32_t payload_unit_start_indicator, psi_table_buffer_t *scte35TableBuffer); 
 void scte35_splice_info_section_print_stdout(const scte35_splice_info_section *sis); 
 
 uint64_t get_splice_insert_PTS (scte35_splice_info_section *sis);
+scte35_splice_insert* get_splice_insert (scte35_splice_info_section *sis);
+
 int is_splice_insert (scte35_splice_info_section *sis);
 
 void scte35_parse_splice_null(bs_t *b);

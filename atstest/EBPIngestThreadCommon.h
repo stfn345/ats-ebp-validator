@@ -31,6 +31,8 @@ typedef struct
 
     int *ingestPassFail;
 
+    psi_table_buffer_t scte35TableBuffer;  // used for SCTE35 tabels that span mult TS packets
+
 } ebp_ingest_thread_params_t;
 
 int postToFIFO (uint64_t PTS, uint32_t sapType, ebp_t *ebp, ebp_descriptor_t *ebpDescriptor, uint32_t PID, 

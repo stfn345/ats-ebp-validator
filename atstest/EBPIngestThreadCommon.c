@@ -25,6 +25,7 @@
 #include <mpeg2ts_demux.h>
 #include <libts_common.h>
 #include <tpes.h>
+#include <psi.h>
 #include <ebp.h>
 #include <scte35.h>
 
@@ -51,26 +52,25 @@ static int validate_ts_packet(ts_packet_t *ts, elementary_stream_info_t *es_info
 {
    if (IS_SCTE35_STREAM(es_info->stream_type))
    {
+      // GORP: handle tables split across mult packets
+
       ebp_ingest_thread_params_t *ebpIngestThreadParams = (ebp_ingest_thread_params_t *)arg;
 
       LOG_INFO_ARGS ("SCTE35 table detected for thread %d", ebpIngestThreadParams->threadNum);
 
       scte35_splice_info_section* splice_info = scte35_splice_info_section_new(); 
       
-      if (!ts->header.payload_unit_start_indicator)
-      {
-         LOG_ERROR_ARGS("IngestThread %d: SCTE35 table: payload_unit_start_indicator not set!", ebpIngestThreadParams->threadNum);
-         reportAddErrorLogArgs("IngestThread %d: SCTE35 table: payload_unit_start_indicator not set!", ebpIngestThreadParams->threadNum);
-         return 0;
-      }
-
-      uint8_t payloadStartPtr = (ts->payload.bytes)[0];
-
-      int returnCode = scte35_splice_info_section_read(splice_info, ts->payload.bytes + 1 + payloadStartPtr, ts->payload.len - 1 - payloadStartPtr);
-      if (returnCode != 0)
+      int returnCode = scte35_splice_info_section_read(splice_info, ts->payload.bytes, 
+         ts->payload.len, ts->header.payload_unit_start_indicator,
+         &(ebpIngestThreadParams->scte35TableBuffer));
+      if (returnCode < 0)
       {
          LOG_ERROR_ARGS("IngestThread %d: Error parsing SCTE35 table", ebpIngestThreadParams->threadNum);
          reportAddErrorLogArgs("IngestThread %d: Error parsing SCTE35 table", ebpIngestThreadParams->threadNum);
+         return 0;
+      }
+      else if (returnCode == 0)
+      {
          return 0;
       }
 
@@ -78,16 +78,51 @@ static int validate_ts_packet(ts_packet_t *ts, elementary_stream_info_t *es_info
 
       if (is_splice_insert (splice_info))
       {
-         uint64_t PTS = get_splice_insert_PTS (splice_info);
-         if (PTS != 0)
-         {
-            // if splice insert message, add to SCTE35 PTS lists for all partitions
-            int arrayIndex = get2DArrayIndex (ebpIngestThreadParams->threadNum, 0, ebpIngestThreadParams->numStreams);    
-            ebp_stream_info_t **streamInfos = &((ebpIngestThreadParams->allStreamInfos)[arrayIndex]);
+         scte35_splice_insert* spliceInsert = get_splice_insert (splice_info);
+               
+         // if splice insert message, add to SCTE35 PTS lists for all partitions
+         // if program_splice == 1, then add to all PIDS, else add to specific PIDS
 
-            for (int i=0; i<ebpIngestThreadParams->numStreams; i++)
+         if (spliceInsert -> program_splice_flag)
+         {
+            uint64_t PTS = get_splice_insert_PTS (splice_info);
+            if (PTS != 0)
             {
-               addSCTE35Point_AllBoundaries (ebpIngestThreadParams->threadNum, streamInfos[i], PTS);
+               // GORP: if splice immediate flag, how to handle?
+
+               int arrayIndex = get2DArrayIndex (ebpIngestThreadParams->threadNum, 0, ebpIngestThreadParams->numStreams);    
+               ebp_stream_info_t **streamInfos = &((ebpIngestThreadParams->allStreamInfos)[arrayIndex]);
+
+               for (int i=0; i<ebpIngestThreadParams->numStreams; i++)
+               {
+                  addSCTE35Point_AllBoundaries (ebpIngestThreadParams->threadNum, streamInfos[i], PTS);
+               }
+            }
+         }
+         else
+         {
+            if (spliceInsert->components != NULL)
+            {
+               // GORP: if splice immediate flag, how to handle?
+
+               for (int i=0; i<vqarray_length(spliceInsert->components); i++)
+               {
+                  scte35_splice_insert_component *component = (scte35_splice_insert_component *) vqarray_get (spliceInsert->components, i);
+                  if (component->splice_time != NULL && component->splice_time->pts_time != 0)
+                  {
+                     int arrayIndex = get2DArrayIndex (ebpIngestThreadParams->threadNum, 0, ebpIngestThreadParams->numStreams);    
+                     ebp_stream_info_t **streamInfos = &((ebpIngestThreadParams->allStreamInfos)[arrayIndex]);
+
+                     for (int i=0; i<ebpIngestThreadParams->numStreams; i++)
+                     {
+                        if (streamInfos[i]->PID == component->component_tag)
+                        {
+                           addSCTE35Point_AllBoundaries (ebpIngestThreadParams->threadNum, streamInfos[i], 
+                              component->splice_time->pts_time);
+                        }
+                     }
+                  }
+               }
             }
          }
       }
@@ -724,7 +759,7 @@ int postToFIFO  (uint64_t PTS, uint32_t sapType, ebp_t *ebp, ebp_descriptor_t *e
    uint32_t PID, uint8_t partitionId, int threadNum, int numStreams, ebp_stream_info_t **allStreamInfos)
 {
    ebp_segment_info_t *ebpSegmentInfo = 
-      (ebp_segment_info_t *)malloc (sizeof (ebp_segment_info_t));
+      (ebp_segment_info_t *)calloc (1, sizeof (ebp_segment_info_t));
 
    ebpSegmentInfo->PTS = PTS;
    ebpSegmentInfo->SAPType = sapType;
@@ -1052,6 +1087,8 @@ void addSCTE35Point (varray_t* scte35List, uint64_t PTS, int threadNum, int part
       uint64_t *PTSTemp = (uint64_t *) varray_get (scte35List, i);
       if (*PTSTemp == PTS)
       {
+         LOG_INFO_ARGS("IngestThread %d: SCTE35 PTS %"PRId64" for partition %d: PID %d already present -- skipping", 
+            threadNum, PTS, partitionID, PID);
          insertComplete = 1;
          break;
       }
