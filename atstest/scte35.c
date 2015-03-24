@@ -89,7 +89,7 @@ uint64_t get_splice_insert_PTS (scte35_splice_info_section *sis)
       {
          if (((scte35_splice_insert *)sis->splice_command)->splice_time->time_specified_flag)
          {
-            return ((scte35_splice_insert *)sis->splice_command)->splice_time->pts_time;
+            return ((scte35_splice_insert *)sis->splice_command)->splice_time->pts_time + sis->pts_adjustment;
          }
       }
    }
