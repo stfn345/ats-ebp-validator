@@ -3,7 +3,7 @@
 // logLevel: 1 ERROR, 2 WARNING, 3 INFO, 4 DEBUG
 logLevel = 3
 
-// enter log path here then uncomment
+// enter log path here then uncomment – default is EBPTestLog.txt
 //logFilePath = 
 
 // amount of time spent searching for EBP structs at start of test in
@@ -22,6 +22,8 @@ ebpSCTE35PTSJitterSecs = 0.5
 socketRcvBufferSz = 2000000
 
 // size of buffer holding transport stream data waiting to be processed
+// This needs to be a bit larger than the ebpPrereadSearchTime above, since all of the
+// preread data is cached here while it is analyzed.
 ingestCircularBufferSz = 1880000
 
 
