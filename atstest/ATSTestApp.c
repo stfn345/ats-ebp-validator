@@ -1527,6 +1527,8 @@ int main(int argc, char** argv)
 {
    printf ("CableLabs ATS EBP Conformance Test Tool v1.0.0.1\n\n");
 
+   reportInit();
+
    int nReturn = initTestConfig();
    if (nReturn != 0)
    {
@@ -1608,8 +1610,6 @@ int main(int argc, char** argv)
    {
       LOG_INFO_ARGS ("Main: FilePath %d = %s", i, argv[i]); 
    }
-
-   reportInit();
 
    if (fileFlag)
    {

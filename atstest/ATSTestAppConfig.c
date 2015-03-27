@@ -45,7 +45,7 @@ void setTestConfigDefaults()
    if (getcwd(g_ATSTestAppConfig.logFilePath, 1024) == NULL)
    {
       LOG_ERROR("ATSTestAppConfig:setTestConfigDefaults: Error getting cwd");
-      reportAddErrorLogArgs("ATSTestAppConfig:setTestConfigDefaults: Error getting cwd");
+      reportAddErrorLog("ATSTestAppConfig:setTestConfigDefaults: Error getting cwd");
       
       strcpy (g_ATSTestAppConfig.logFilePath, "EBPTestLog.txt");
    }
@@ -84,7 +84,7 @@ int readTestConfigFile()
    if (getcwd(configFilePath, 1024) == NULL)
    {
       LOG_ERROR("ATSTestAppConfig: Error getting cwd");
-      reportAddErrorLogArgs("ATSTestAppConfig: Error getting cwd");
+      reportAddErrorLog("ATSTestAppConfig: Error getting cwd");
       return -1;
    }
 
@@ -93,8 +93,8 @@ int readTestConfigFile()
    FILE *configFile = fopen (configFilePath, "rt");
    if (configFile == NULL)
    {
-      LOG_ERROR_ARGS("ATSTestAppConfig: Error opening config file %s", configFilePath);
-      reportAddErrorLogArgs("ATSTestAppConfig: Error opening config file %s", configFilePath);
+      //LOG_ERROR_ARGS("ATSTestAppConfig: Error opening config file %s", configFilePath);
+      //reportAddErrorLogArgs("ATSTestAppConfig: Error opening config file %s", configFilePath);
       return -1;
    }
 
