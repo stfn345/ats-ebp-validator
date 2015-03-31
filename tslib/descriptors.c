@@ -57,9 +57,11 @@ int read_descriptor_loop(vqarray_t *desc_list, bs_t *b, int length)
    
    while (length > bs_pos(b) - desc_start) 
    {
+      LOG_DEBUG_ARGS ("read_descriptor_loop: START bs_pos(b)= %d", bs_pos(b));
       descriptor_t *desc = descriptor_new(); 
       desc = descriptor_read(desc, b); 
       vqarray_add(desc_list, desc);
+      LOG_DEBUG_ARGS ("read_descriptor_loop: END bs_pos(b)= %d", bs_pos(b));
    }
   
    return bs_pos(b) - desc_start;
@@ -123,6 +125,7 @@ descriptor_t* descriptor_read(descriptor_t *desc, bs_t *b)
    }
    else
    {
+      LOG_DEBUG_ARGS ("skipping descriptor: tag = %d, length = %d", desc->tag, desc->length);
 //      printf ("skipping descriptor: %d\n", desc->length);
       bs_skip_bytes(b, desc->length);
    }

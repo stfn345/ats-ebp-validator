@@ -230,21 +230,31 @@ static int validate_pes_packet(pes_packet_t *pes, elementary_stream_info_t *esi,
          streamInfo->streamPassFail = 0;
       }
    }
+   else
+   {
+      LOG_DEBUG_ARGS("IngestThread %d: No EBP data in transport packet: PID %d (%s)", 
+         ebpIngestThreadParams->threadNum, esi->elementary_PID, getStreamTypeDesc (esi));
+   }
 
       
    // isBoundary is an array indexed by PartitionId -- we will analyze the segment once
    // for each partition that triggered a boundary
    int *isBoundary = (int *)calloc (EBP_NUM_PARTITIONS, sizeof(int));
- //  LOG_INFO_ARGS("EBPIngestThread %d: Calling detectBoundary. (PID %d)", 
- //           ebpIngestThreadParams->threadNum, esi->elementary_PID);
+//   LOG_INFO_ARGS("EBPIngestThread %d: Calling detectBoundary. (PID %d)", 
+//            ebpIngestThreadParams->threadNum, esi->elementary_PID);
    int boundaryDetected = detectBoundary(ebpIngestThreadParams->threadNum, ebp, 
       streamInfo, pes->header.PTS, isBoundary);
+//   LOG_INFO_ARGS("EBPIngestThread %d: DONE calling detectBoundary. (PID %d)", 
+//            ebpIngestThreadParams->threadNum, esi->elementary_PID);
 
    int lastVideoPTSSet = 0;
 
 
    if (boundaryDetected)
    {
+      LOG_INFO_ARGS("EBPIngestThread %d: boundaryDetected. (PID %d)", 
+            ebpIngestThreadParams->threadNum, esi->elementary_PID);
+
       streamInfo->ebpChunkCntr++;
       pes->header.PTS = adjustPTSForTests (pes->header.PTS, ebpIngestThreadParams->threadNum, 
          streamInfo);
@@ -339,7 +349,6 @@ static int validate_pes_packet(pes_packet_t *pes, elementary_stream_info_t *esi,
 
       }
    }
-
    
    if (ebp != NULL)
    {

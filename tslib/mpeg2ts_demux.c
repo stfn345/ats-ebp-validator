@@ -495,8 +495,8 @@ int mpeg2ts_stream_read_ts_packet(mpeg2ts_stream_t *m2s, ts_packet_t *ts)
    
    if (m2s->pat == NULL) 
    {
-      LOG_ERROR_ARGS("PAT missing -- unknown PID 0x%02X", ts->header.PID); 
-      reportAddErrorLogArgs("PAT missing -- unknown PID 0x%02X", ts->header.PID); 
+      LOG_INFO_ARGS("PAT missing -- unknown PID 0x%02X", ts->header.PID); 
+//      reportAddErrorLogArgs("PAT missing -- unknown PID 0x%02X", ts->header.PID); 
       ts_free(ts);  
       return 0;    
    }

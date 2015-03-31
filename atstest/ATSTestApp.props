@@ -24,7 +24,7 @@ socketRcvBufferSz = 2000000
 // size of buffer holding transport stream data waiting to be processed
 // This needs to be a bit larger than the ebpPrereadSearchTime above, since all of the
 // preread data is cached here while it is analyzed.
-ingestCircularBufferSz = 1880000
+ingestCircularBufferSz = 18800000
 
 
 

@@ -177,7 +177,7 @@ void *EBPSegmentAnalysisThreadProc(void *threadParams)
                      if (acquisitionTimeSecsTemp != acquisitionTimeSecs ||
                         acquisitionTimeFracSecTemp != acquisitionTimeFracSec)
                      {
-                        LOG_ERROR_ARGS ("EBPSegmentAnalysisThread %d: FAIL: Acquisition time MISMATCH for fifo %d (PID %d). Expected %d,%f, Actual %d,%f", 
+                        LOG_ERROR_ARGS ("EBPSegmentAnalysisThread %d: FAIL: Acquisition time MISMATCH for fifo %d (PID %d). Expected %u,%f, Actual %u,%f", 
                                         ebpSegmentAnalysisThreadParams->threadID, i, streamInfo->PID, 
                                         acquisitionTimeSecs, acquisitionTimeFracSec,
                                         acquisitionTimeSecsTemp, acquisitionTimeFracSecTemp);
