@@ -21,6 +21,7 @@
 #include <stdio.h>
 
 #include <inttypes.h>
+#include <tpes.h>
 
 
 #include "ATSTestReport.h"
@@ -170,12 +171,17 @@ char *reportPrint(int numIngests, int numStreams, ebp_stream_info_t **streamInfo
       fprintf (myFile, "%s\n", tmp);
    }
 
+
+   // char* pts_dts_to_string(uint64_t pts_dts, char inout[13]);
+
    fprintf (myFile, "\nBoundary Points:\n");
+   char ptsString[13];
    for (int i=0; i<varray_length(g_listBPInfos); i++)
    {
       bp_info_t *tmp = (bp_info_t *) varray_get(g_listBPInfos, i);
-      fprintf (myFile, "ingest #%d, stream #%d (PID %d), partition #%d, PTS = %"PRId64"\n", 
-         tmp->ingestId, tmp->streamId, tmp->PID, tmp->partitionId, tmp->PTS);
+      fprintf (myFile, "ingest #%d, stream #%d (PID %d), partition #%d, PTS = %"PRId64" (%s) \n", 
+         tmp->ingestId, tmp->streamId, tmp->PID, tmp->partitionId, tmp->PTS, 
+         pts_dts_to_string(tmp->PTS, ptsString));
    }
 
 

@@ -817,8 +817,10 @@ int postToFIFO  (uint64_t PTS, uint32_t sapType, ebp_t *ebp, ebp_descriptor_t *e
       threadNum, PTS, partitionId, (streamInfos[fifoIndex])->fifo->id, PID);
  //  reportAddPTS (PTS, partitionId, threadNum, (streamInfos[fifoIndex])->fifo->id, PID);
    
-   reportAddInfoLogArgs ("EBPIngestThread %d: POSTING PTS %"PRId64" for partition %d to FIFO %d (PID %d)", 
-      threadNum, PTS, partitionId, (streamInfos[fifoIndex])->fifo->id, PID);
+   char ptsString[13];
+   reportAddInfoLogArgs ("EBPIngestThread %d: POSTING PTS %"PRId64" (%s) for partition %d to FIFO %d (PID %d)", 
+      threadNum, PTS, pts_dts_to_string(PTS, ptsString), 
+      partitionId, (streamInfos[fifoIndex])->fifo->id, PID);
 
    reportAddPTS (PTS, partitionId, threadNum, fifoIndex, PID);
 
