@@ -71,6 +71,7 @@ static int validate_ts_packet(ts_packet_t *ts, elementary_stream_info_t *es_info
       }
       else if (returnCode == 0)
       {
+         LOG_INFO_ARGS("IngestThread %d: SCTE35 table mult TS packet table...", ebpIngestThreadParams->threadNum);
          return 0;
       }
 
@@ -126,6 +127,25 @@ static int validate_ts_packet(ts_packet_t *ts, elementary_stream_info_t *es_info
             }
          }
       }
+      if (is_time_signal (splice_info))
+      {
+         scte35_time_signal* spliceTimeSignal = get_time_signal (splice_info);
+         if (spliceTimeSignal->splice_time->time_specified_flag)
+         {
+            uint64_t PTS = spliceTimeSignal->splice_time->pts_time + splice_info->pts_adjustment;
+            if (PTS != 0)
+            {
+               int arrayIndex = get2DArrayIndex (ebpIngestThreadParams->threadNum, 0, ebpIngestThreadParams->numStreams);    
+               ebp_stream_info_t **streamInfos = &((ebpIngestThreadParams->allStreamInfos)[arrayIndex]);
+
+               for (int i=0; i<ebpIngestThreadParams->numStreams; i++)
+               {
+                  addSCTE35Point_AllBoundaries (ebpIngestThreadParams->threadNum, streamInfos[i], PTS);
+               }
+            }
+         }
+      }
+
 
       scte35_splice_info_section_free (splice_info);
       return 0;
@@ -1137,6 +1157,7 @@ void addSCTE35Point (varray_t* scte35List, uint64_t PTS, int threadNum, int part
          varray_insert(scte35List, i, PTSCopy);
 
          insertComplete = 1;
+         break;
       }
    }
 

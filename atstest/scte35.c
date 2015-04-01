@@ -108,6 +108,21 @@ scte35_splice_insert * get_splice_insert (scte35_splice_info_section *sis)
    return 0;
 }
 
+int is_time_signal (scte35_splice_info_section *sis)
+{
+   return (sis->splice_command_type == 0x06);
+}
+
+scte35_time_signal * get_time_signal (scte35_splice_info_section *sis)
+{
+   if (sis->splice_command_type == 0x06)
+   {
+      return (scte35_time_signal *)(sis->splice_command);
+   }
+
+   return 0;
+}
+
 
 int scte35_splice_info_section_read(scte35_splice_info_section *sis, uint8_t *buf, size_t buf_len,
    uint32_t payload_unit_start_indicator, psi_table_buffer_t *scte35TableBuffer)

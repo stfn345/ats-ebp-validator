@@ -151,8 +151,10 @@ void scte35_splice_info_section_print_stdout(const scte35_splice_info_section *s
 
 uint64_t get_splice_insert_PTS (scte35_splice_info_section *sis);
 scte35_splice_insert* get_splice_insert (scte35_splice_info_section *sis);
-
 int is_splice_insert (scte35_splice_info_section *sis);
+
+scte35_time_signal* get_time_signal (scte35_splice_info_section *sis);
+int is_time_signal (scte35_splice_info_section *sis);
 
 void scte35_parse_splice_null(bs_t *b);
 scte35_splice_schedule* scte35_parse_splice_schedule(bs_t *b);
