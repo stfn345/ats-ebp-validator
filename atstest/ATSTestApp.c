@@ -251,7 +251,7 @@ int modBoundaryInfoArray (ebp_descriptor_t * ebpDescriptor, ebp_t *ebp, ebp_boun
    }
    else
    {
-      LOG_INFO ("modBoundaryInfoArray: both ebp_descriptor and ebp NULL");
+      LOG_INFO_ARGS ("modBoundaryInfoArray: both ebp_descriptor and ebp NULL: stream type = 0x%x", (programStreamInfo->stream_types)[currentStreamIndex]);
 
       if (IS_VIDEO_STREAM((programStreamInfo->stream_types)[currentStreamIndex]))
       {
@@ -1997,7 +1997,20 @@ void freeProgramStreamInfo(program_stream_info_t *programStreamInfo)
 
 void populateProgramStreamInfo(program_stream_info_t *programStreamInfo, mpeg2ts_program_t *m2p)
 {
-   programStreamInfo->numStreams = vqarray_length(m2p->pids);
+   pid_info_t *pi;
+//   programStreamInfo->numStreams = vqarray_length(m2p->pids);
+   programStreamInfo->numStreams = 0;
+   for (int j = 0; j < vqarray_length(m2p->pids); j++)
+   {
+      if ((pi = vqarray_get(m2p->pids, j)) != NULL)
+      {
+         if (IS_AUDIO_STREAM(pi->es_info->stream_type) || IS_VIDEO_STREAM(pi->es_info->stream_type))
+         {
+            programStreamInfo->numStreams++;
+         }
+      }
+   }
+
 
    programStreamInfo->stream_types = (uint32_t*) calloc (programStreamInfo->numStreams, sizeof (uint32_t));
    programStreamInfo->PIDs = (uint32_t*) calloc (programStreamInfo->numStreams, sizeof (uint32_t));
@@ -2005,17 +2018,22 @@ void populateProgramStreamInfo(program_stream_info_t *programStreamInfo, mpeg2ts
    programStreamInfo->ebps = (ebp_t**) calloc (programStreamInfo->numStreams, sizeof (ebp_t *));
    programStreamInfo->language = (char**) calloc (programStreamInfo->numStreams, sizeof (char *));
 
-   pid_info_t *pi;
+   int progStreamIndex = 0;
 
    for (int j = 0; j < vqarray_length(m2p->pids); j++)
    {
       if ((pi = vqarray_get(m2p->pids, j)) != NULL)
       {
-         LOG_INFO_ARGS ("Main:prereadFiles: stream %d: stream_type = %u, elementary_PID = %u, ES_info_length = %u",
-            j, pi->es_info->stream_type, pi->es_info->elementary_PID, pi->es_info->ES_info_length);
+         if (!IS_AUDIO_STREAM(pi->es_info->stream_type) && !IS_VIDEO_STREAM(pi->es_info->stream_type))
+         {
+            continue;
+         }
 
-         programStreamInfo->stream_types[j] = pi->es_info->stream_type;
-         programStreamInfo->PIDs[j] = pi->es_info->elementary_PID;
+         LOG_INFO_ARGS ("Main:prereadFiles: stream %d: stream_type = %u, elementary_PID = %u, ES_info_length = %u",
+            progStreamIndex, pi->es_info->stream_type, pi->es_info->elementary_PID, pi->es_info->ES_info_length);
+
+         programStreamInfo->stream_types[progStreamIndex] = pi->es_info->stream_type;
+         programStreamInfo->PIDs[progStreamIndex] = pi->es_info->elementary_PID;
 
          ebp_descriptor_t* ebpDescriptor = getEBPDescriptor (pi->es_info);
          if (ATS_TEST_CASE_AUDIO_IMPLICIT_TRIGGER &&
@@ -2036,7 +2054,7 @@ void populateProgramStreamInfo(program_stream_info_t *programStreamInfo, mpeg2ts
          if (ebpDescriptor != NULL)
          {
             ebp_descriptor_print_stdout (ebpDescriptor);
-            programStreamInfo->ebpDescriptors[j] = ebp_descriptor_copy(ebpDescriptor);
+            programStreamInfo->ebpDescriptors[progStreamIndex] = ebp_descriptor_copy(ebpDescriptor);
          }
          else
          {
@@ -2068,7 +2086,7 @@ void populateProgramStreamInfo(program_stream_info_t *programStreamInfo, mpeg2ts
             languageStringSz += 3;
          }
             
-         programStreamInfo->language[j] = (char *)calloc (languageStringSz, 1);
+         programStreamInfo->language[progStreamIndex] = (char *)calloc (languageStringSz, 1);
 
          if (languageDescriptor != NULL)
          {
@@ -2077,21 +2095,21 @@ void populateProgramStreamInfo(program_stream_info_t *programStreamInfo, mpeg2ts
             aphabetizeLanguageDescriptorLanguages (languageDescriptor);
             for (int ii=0; ii<languageDescriptor->num_languages; ii++)
             {
-               strcat (programStreamInfo->language[j], languageDescriptor->languages[ii].ISO_639_language_code);
-               strcat (programStreamInfo->language[j], ":");
+               strcat (programStreamInfo->language[progStreamIndex], languageDescriptor->languages[ii].ISO_639_language_code);
+               strcat (programStreamInfo->language[progStreamIndex], ":");
             }
 
-            LOG_INFO_ARGS ("Num Languages = %d, Language = %s", languageDescriptor->num_languages, programStreamInfo->language[j]);
+            LOG_INFO_ARGS ("Num Languages = %d, Language = %s", languageDescriptor->num_languages, programStreamInfo->language[progStreamIndex]);
          }
-         strcat (programStreamInfo->language[j], ",");
+         strcat (programStreamInfo->language[progStreamIndex], ",");
 
          if (componentNameDescriptor != NULL && componentNameDescriptor->num_names)
          {
             aphabetizeStringArray(componentNameDescriptor->names, componentNameDescriptor->num_names);
             for (int ii=0; ii<componentNameDescriptor->num_names; ii++)
             {
-               strcat (programStreamInfo->language[j], componentNameDescriptor->names[ii]);               
-               strcat (programStreamInfo->language[j], ":");
+               strcat (programStreamInfo->language[progStreamIndex], componentNameDescriptor->names[ii]);               
+               strcat (programStreamInfo->language[progStreamIndex], ":");
             }
          }
          else
@@ -2101,18 +2119,20 @@ void populateProgramStreamInfo(program_stream_info_t *programStreamInfo, mpeg2ts
                // testing: tests discrimination by language by making a unique language per stream
                char temp[10];
                sprintf (temp, "%d", pi->es_info->elementary_PID);
-               strcat (programStreamInfo->language[j], temp);  
+               strcat (programStreamInfo->language[progStreamIndex], temp);  
             }
          }
          
-         strcat (programStreamInfo->language[j], ",");
+         strcat (programStreamInfo->language[progStreamIndex], ",");
 
          if (ac3Descriptor != NULL)
          {
-            strcat (programStreamInfo->language[j], ac3Descriptor->language);               
+            strcat (programStreamInfo->language[progStreamIndex], ac3Descriptor->language);               
          }
                
-         LOG_INFO_ARGS ("Language = %s", programStreamInfo->language[j]);
+         LOG_INFO_ARGS ("Language = %s", programStreamInfo->language[progStreamIndex]);
+      
+         progStreamIndex++;
       }
    }
 }
