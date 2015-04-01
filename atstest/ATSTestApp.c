@@ -268,7 +268,7 @@ int modBoundaryInfoArray (ebp_descriptor_t * ebpDescriptor, ebp_t *ebp, ebp_boun
          // get video PID
          uint32_t videoPID;
          uint32_t streamTypeTemp;
-         int returnCode = getVideoPID(programStreamInfo, &videoPID, &streamTypeTemp);
+         int returnCode = getVideoPID(&programStreamInfo[currentFileIndex], &videoPID, &streamTypeTemp);
          if (returnCode != 0)
          {
             // no video stream -- nothing to determine EBP segment boundaries
@@ -770,7 +770,7 @@ int getVideoPID(program_stream_info_t *programStreamInfo, uint32_t *PIDOut, uint
          *PIDOut = (programStreamInfo->PIDs)[streamIndex];
          *streamType = (programStreamInfo->stream_types)[streamIndex];
          videoFound = 1;
-      }
+     }
    }
 
    if (videoFound)
