@@ -181,7 +181,7 @@ void *EBPSegmentAnalysisThreadProc(void *threadParams)
                                         ebpSegmentAnalysisThreadParams->threadID, i, streamInfo->PID, 
                                         acquisitionTimeSecs, acquisitionTimeFracSec,
                                         acquisitionTimeSecsTemp, acquisitionTimeFracSecTemp);
-                        reportAddErrorLogArgs ("EBPSegmentAnalysisThread %d: FAIL: Acquisition time MISMATCH for fifo %d (PID %d). Expected %d,%f, Actual %d,%f", 
+                        reportAddErrorLogArgs ("EBPSegmentAnalysisThread %d: FAIL: Acquisition time MISMATCH for fifo %d (PID %d). Expected %u,%f, Actual %u,%f", 
                                         ebpSegmentAnalysisThreadParams->threadID, i, streamInfo->PID, 
                                         acquisitionTimeSecs, acquisitionTimeFracSec,
                                         acquisitionTimeSecsTemp, acquisitionTimeFracSecTemp);
@@ -298,7 +298,7 @@ void *EBPSegmentAnalysisThreadProc(void *threadParams)
    LOG_INFO_ARGS ("EBPSegmentAnalysisThread %d: exiting...", ebpSegmentAnalysisThreadParams->threadID);
    free (ebpSegmentAnalysisThreadParams->streamInfos);
    free (ebpSegmentAnalysisThreadParams);
-   pthread_exit(NULL);
+   //pthread_exit(NULL);
 }
 
 int syncIncomingStreams (int threadID, int numFiles, ebp_stream_info_t **streamInfos, int *fifoNotActive)

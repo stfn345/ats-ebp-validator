@@ -288,13 +288,15 @@ void *EBPSocketReceiveThreadProc(void *threadParams)
       }
    }
 
+   free (ts_buf);
+
    close (mySocket);
    if (streamLogFileHandle != NULL)
    {
       fclose (streamLogFileHandle);
    }
 
-   pthread_exit(NULL);
+   //pthread_exit(NULL);
 
    // NOTE: calling code frees ebpSocketReceiveThreadParams
 

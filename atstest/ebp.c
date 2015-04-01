@@ -75,6 +75,8 @@ int ebp_read(ebp_t *ebp, ts_scte128_private_data_t *scte128)
       ebp->ebp_ext_partitions = bs_read_u8(b);
    }
 
+   bs_free (b);
+
    return 1;
 }
 

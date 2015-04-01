@@ -169,6 +169,7 @@ static int validate_pes_packet(pes_packet_t *pes, elementary_stream_info_t *esi,
 {
    LOG_DEBUG("validate_pes_packet");
    // Get the first TS packet and check it for EBP
+
    ts_packet_t *first_ts = (ts_packet_t*)vqarray_get(ts_queue,0);
    if (first_ts == NULL)
    {
@@ -326,7 +327,7 @@ static int validate_pes_packet(pes_packet_t *pes, elementary_stream_info_t *esi,
          else if (IS_AUDIO_STREAM(esi->stream_type))
          {
            // this is an audio stream, so check that audio does not lag video by more than 3 seconds
-            if (pes->header.PTS > (streamInfo->lastVideoChunkPTS + 3 * 90000))  // PTS is 90kHz ticks
+            if (streamInfo->lastVideoChunkPTS != 0 && pes->header.PTS > (streamInfo->lastVideoChunkPTS + 3 * 90000))  // PTS is 90kHz ticks
             {
                LOG_ERROR_ARGS("IngestThread %d: FAIL: Audio PTS (%"PRId64") lags video PTS (%"PRId64") by more than 3 seconds: PID %d (%s)", 
                   ebpIngestThreadParams->threadNum, pes->header.PTS, streamInfo->lastVideoChunkPTS, 
@@ -484,11 +485,13 @@ uint32_t getSAPType_AVC(pes_packet_t *pes, ts_packet_t *first_ts)
          if (h->nal->nal_unit_type == 5)
          {
             SAPType = 1;
+            h264_free(h);
             break;
          }
          else if (h->nal->nal_unit_type == 1)
          {
             SAPType = 2;
+            h264_free(h);
             break;
          }
 
@@ -513,7 +516,9 @@ ebp_t* getEBP(ts_packet_t *ts, ebp_stream_info_t * streamInfo, int threadNum)
    }
 
    int found_ebp = 0;
-   for (vqarray_iterator_t *it = vqarray_iterator_new(scte128_data); vqarray_iterator_has_next(it);)
+
+   vqarray_iterator_t *it = vqarray_iterator_new(scte128_data);
+   for (; vqarray_iterator_has_next(it);)
    {
       ts_scte128_private_data_t *scte128 = (ts_scte128_private_data_t*)vqarray_iterator_next(it);
 
@@ -529,6 +534,7 @@ ebp_t* getEBP(ts_packet_t *ts, ebp_stream_info_t * streamInfo, int threadNum)
 
             streamInfo->streamPassFail = 0;
                
+            vqarray_iterator_free (it);
             return NULL;
          }
 
@@ -543,6 +549,7 @@ ebp_t* getEBP(ts_packet_t *ts, ebp_stream_info_t * streamInfo, int threadNum)
 
             streamInfo->streamPassFail = 0;
 
+            vqarray_iterator_free (it);
             return NULL;
          }
 
@@ -557,10 +564,12 @@ ebp_t* getEBP(ts_packet_t *ts, ebp_stream_info_t * streamInfo, int threadNum)
 
             streamInfo->streamPassFail = 0;
 
+            vqarray_iterator_free (it);
             return NULL;
          }
       }
    }
+   vqarray_iterator_free (it);
 
    return ebp;
 }

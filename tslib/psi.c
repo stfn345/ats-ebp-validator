@@ -186,6 +186,7 @@ int program_association_section_read(program_association_section_t *pas, uint8_t
                      pas->table_id, program_association_section); 
       SAFE_REPORT_TS_ERR(-30); 
       resetPSITableBuffer(patBuffer);
+      bs_free (b);
       return 0;
    }
    
@@ -198,6 +199,7 @@ int program_association_section_read(program_association_section_t *pas, uint8_t
       reportAddErrorLog("section_syntax_indicator not set in PAT"); 
       SAFE_REPORT_TS_ERR(-31); 
       resetPSITableBuffer(patBuffer);
+      bs_free (b);
       return 0;
    }
    bs_skip_u(b, 3); // TODO read the zero bit, check it to be zero
@@ -210,6 +212,7 @@ int program_association_section_read(program_association_section_t *pas, uint8_t
                      pas->section_length, MAX_SECTION_LEN); 
       SAFE_REPORT_TS_ERR(-32); 
       resetPSITableBuffer(patBuffer);
+      bs_free (b);
       return 0;
    }
    
@@ -302,6 +305,7 @@ int program_association_section_read(program_association_section_t *pas, uint8_t
       reportAddErrorLogArgs("PAT CRC_32 specified as 0x%08X, but calculated as 0x%08X", pas->CRC_32, pas_crc); 
       SAFE_REPORT_TS_ERR(-33); 
       resetPSITableBuffer(patBuffer);
+      bs_free (b);
       return 0;
    } 
    else 
@@ -520,6 +524,7 @@ int program_map_section_read(program_map_section_t *pms, uint8_t *buf, size_t bu
       reportAddErrorLogArgs("Table ID in PMT is 0x%02X instead of expected 0x%02X", pms->table_id, TS_program_map_section); 
       SAFE_REPORT_TS_ERR(-40);
       resetPSITableBuffer(pmtBuffer);
+      bs_free (b);
       return 0;
    }
 
@@ -530,6 +535,7 @@ int program_map_section_read(program_map_section_t *pms, uint8_t *buf, size_t bu
       reportAddErrorLog("section_syntax_indicator not set in PMT"); 
       SAFE_REPORT_TS_ERR(-41); 
       resetPSITableBuffer(pmtBuffer);
+      bs_free (b);
       return 0;
    }
    
@@ -544,6 +550,7 @@ int program_map_section_read(program_map_section_t *pms, uint8_t *buf, size_t bu
                      pms->section_length, MAX_SECTION_LEN); 
       SAFE_REPORT_TS_ERR(-42); 
       resetPSITableBuffer(pmtBuffer);
+      bs_free (b);
       return 0;
    }
 
@@ -588,6 +595,7 @@ int program_map_section_read(program_map_section_t *pms, uint8_t *buf, size_t bu
       reportAddErrorLog("Multi-section PMT is not allowed/n"); 
       SAFE_REPORT_TS_ERR(-43); 
       resetPSITableBuffer(pmtBuffer);
+      bs_free (b);
       return 0;
    }
    
@@ -599,6 +607,7 @@ int program_map_section_read(program_map_section_t *pms, uint8_t *buf, size_t bu
       reportAddErrorLogArgs("PCR PID has invalid value 0x%02X", pms->PCR_PID); 
       SAFE_REPORT_TS_ERR(-44); 
       resetPSITableBuffer(pmtBuffer);
+      bs_free (b);
       return 0;
    }
  //  printf ("PCR PID = %d\n", pms->PCR_PID);
@@ -613,6 +622,7 @@ int program_map_section_read(program_map_section_t *pms, uint8_t *buf, size_t bu
                      pms->program_info_length, MAX_PROGRAM_INFO_LEN); 
       SAFE_REPORT_TS_ERR(-45); 
       resetPSITableBuffer(pmtBuffer);
+      bs_free (b);
       return 0;
    }
    
@@ -637,6 +647,7 @@ int program_map_section_read(program_map_section_t *pms, uint8_t *buf, size_t bu
       reportAddErrorLogArgs("PMT CRC_32 specified as 0x%08X, but calculated as 0x%08X", pms->CRC_32, pas_crc); 
       SAFE_REPORT_TS_ERR(-46); 
       resetPSITableBuffer(pmtBuffer);
+      bs_free (b);
       return 0;
    } 
    else 
@@ -766,6 +777,7 @@ int conditional_access_section_read(conditional_access_section_t *cas, uint8_t *
                      cas->table_id, conditional_access_section); 
       SAFE_REPORT_TS_ERR(-30); 
       resetPSITableBuffer(catBuffer);
+      bs_free (b);
       return 0;
    }
    
@@ -778,6 +790,7 @@ int conditional_access_section_read(conditional_access_section_t *cas, uint8_t *
       reportAddErrorLog("section_syntax_indicator not set in CAT"); 
       SAFE_REPORT_TS_ERR(-31); 
       resetPSITableBuffer(catBuffer);
+      bs_free (b);
       return 0;
    }
    bs_skip_u(b, 3); // TODO read the zero bit, check it to be zero
@@ -790,6 +803,7 @@ int conditional_access_section_read(conditional_access_section_t *cas, uint8_t *
                      cas->section_length, MAX_SECTION_LEN); 
       SAFE_REPORT_TS_ERR(-32); 
       resetPSITableBuffer(catBuffer);
+      bs_free (b);
       return 0;
    }
    
@@ -850,6 +864,7 @@ int conditional_access_section_read(conditional_access_section_t *cas, uint8_t *
       reportAddErrorLogArgs("CAT CRC_32 specified as 0x%08X, but calculated as 0x%08X", cas->CRC_32, cas_crc); 
       SAFE_REPORT_TS_ERR(-33); 
       resetPSITableBuffer(catBuffer);
+      bs_free (b);
       return 0;
    } 
 

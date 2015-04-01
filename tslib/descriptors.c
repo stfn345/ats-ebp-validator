@@ -108,6 +108,7 @@ descriptor_t* descriptor_read(descriptor_t *desc, bs_t *b)
    desc->length = bs_read_u8(b);
 
    LOG_DEBUG_ARGS ("descriptor_read: tag = %d, length = %d", desc->tag, desc->length);
+//   printf ("descriptor_read: tag = %d, length = %d\n", desc->tag, desc->length);
 /*   for (int i=0; i<desc->length; i++)
    {
       printf ("0x%x ", b->p[i]);
@@ -395,7 +396,7 @@ descriptor_t* ca_descriptor_new(descriptor_t *desc)
    ca_descriptor_t *cad = NULL;
    cad = (ca_descriptor_t *)calloc(1, sizeof(ca_descriptor_t));
    cad->descriptor.tag = CA_DESCRIPTOR;
-   if (desc != NULL) cad->descriptor.tag = desc->length;
+   if (desc != NULL) cad->descriptor.length = desc->length;
    free(desc);
    return (descriptor_t *)cad;
 }
@@ -478,6 +479,7 @@ descriptor_t* max_bitrate_descriptor_read(descriptor_t *desc, bs_t *b)
 
    bs_skip_u(b, 2);
    maxbr->max_bitrate = bs_read_u(b, 22);
+   LOG_INFO_ARGS ("maxbr->max_bitrate = %d\n", maxbr->max_bitrate);
 
    return (descriptor_t *)maxbr;
 }
