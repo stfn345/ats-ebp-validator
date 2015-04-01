@@ -111,7 +111,7 @@ void *EBPSegmentAnalysisThreadProc(void *threadParams)
             else
             {
                ebp_segment_info_t *ebpSegmentInfo = (ebp_segment_info_t *)element;
-               LOG_INFO_ARGS ("EBPSegmentAnalysisThread %d: POPPED PTS = %"PRId64", partitionId = %d from fifo %d (PID %d)", 
+               LOG_INFO_ARGS ("EBPSegmentAnalysisThread %d: POPPED PTS = %"PRId64", partitionId = %d from fifo %d (PID %d)",
                   ebpSegmentAnalysisThreadParams->threadID, ebpSegmentInfo->PTS, ebpSegmentInfo->partitionId, i, streamInfo->PID);
                   
                if (!nextPTSSet)
@@ -298,7 +298,7 @@ void *EBPSegmentAnalysisThreadProc(void *threadParams)
    LOG_INFO_ARGS ("EBPSegmentAnalysisThread %d: exiting...", ebpSegmentAnalysisThreadParams->threadID);
    free (ebpSegmentAnalysisThreadParams->streamInfos);
    free (ebpSegmentAnalysisThreadParams);
-   //pthread_exit(NULL);
+   return NULL;
 }
 
 int syncIncomingStreams (int threadID, int numFiles, ebp_stream_info_t **streamInfos, int *fifoNotActive)
@@ -345,8 +345,8 @@ int syncIncomingStreams (int threadID, int numFiles, ebp_stream_info_t **streamI
       else
       {            
          ebp_segment_info_t *ebpSegmentInfo = (ebp_segment_info_t *)element;
-         LOG_INFO_ARGS ("EBPSegmentAnalysisThread:syncIncomingStreams %d: PEEKED PTS = %"PRId64" from fifo %d (PID %d), descriptor = %x", 
-            threadID, ebpSegmentInfo->PTS, i, streamInfos[i]->PID, (unsigned int)(ebpSegmentInfo->latestEBPDescriptor));               
+         LOG_INFO_ARGS ("EBPSegmentAnalysisThread:syncIncomingStreams %d: PEEKED PTS = %"PRId64" from fifo %d (PID %d), descriptor = %p",
+            threadID, ebpSegmentInfo->PTS, i, streamInfos[i]->PID, ebpSegmentInfo->latestEBPDescriptor);
          if (ebpSegmentInfo->PTS > startPTS)
          {
             startPTS = ebpSegmentInfo->PTS;
