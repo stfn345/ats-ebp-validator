@@ -77,6 +77,8 @@ int ebp_read(ebp_t *ebp, ts_scte128_private_data_t *scte128)
 
    bs_free (b);
 
+   ebp_print_stdout(ebp);
+
    return 1;
 }
 
