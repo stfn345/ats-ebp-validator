@@ -230,7 +230,7 @@ void *EBPSocketReceiveThreadProc(void *threadParams)
          continue;
       }
 
-      LOG_INFO_ARGS("EBPSocketReceiveThread %d: Receiving...", ebpSocketReceiveThreadParams->threadNum);
+      LOG_DEBUG_ARGS("EBPSocketReceiveThread %d: Receiving...", ebpSocketReceiveThreadParams->threadNum);
       returnCode = recv(mySocket, ts_buf, availableSpace, 0 /* flags */);
       if (returnCode < 0)
       {
@@ -241,7 +241,7 @@ void *EBPSocketReceiveThreadProc(void *threadParams)
          break;
       }
 
-      LOG_INFO_ARGS ("EBPSocketReceiveThread %d: Received %d bytes", ebpSocketReceiveThreadParams->threadNum, returnCode);
+      LOG_DEBUG_ARGS ("EBPSocketReceiveThread %d: Received %d bytes", ebpSocketReceiveThreadParams->threadNum, returnCode);
       if (returnCode%TS_SIZE != 0)
       {
          LOG_ERROR_ARGS("EBPSocketReceiveThread %d: Received bytes not integral number of TS packets", 
