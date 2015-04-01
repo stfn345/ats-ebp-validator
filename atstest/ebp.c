@@ -118,7 +118,7 @@ int ebp_validate_groups(const ebp_t *ebp)
       {
          if (i==j) continue;
       
-         uint32_t grouping_id_j = *((uint32_t *) vqarray_get (ebp->ebp_grouping_ids, i));
+         uint32_t grouping_id_j = *((uint32_t *) vqarray_get (ebp->ebp_grouping_ids, j));
 
          if (grouping_id_i == grouping_id_j)
          {
@@ -141,6 +141,7 @@ int ebp_validate_groups(const ebp_t *ebp)
             LOG_ERROR ("ebp_validate_groups: FAIL: orphan group id 126 detected (1)");
             reportAddErrorLog ("ebp_validate_groups: FAIL: orphan group id 126 detected (1)");
             returnCode = -1;
+            continue;
          }
 
          uint32_t previous_grouping_id = *((uint32_t *) vqarray_get (ebp->ebp_grouping_ids, i-1));
@@ -158,6 +159,7 @@ int ebp_validate_groups(const ebp_t *ebp)
             LOG_ERROR ("ebp_validate_groups: FAIL: orphan group id 127 detected (1)");
             reportAddErrorLog ("ebp_validate_groups: FAIL: orphan group id 127 detected (1)");
             returnCode = -1;
+            continue;
          }
 
          uint32_t previous_grouping_id = *((uint32_t *) vqarray_get (ebp->ebp_grouping_ids, i-1));

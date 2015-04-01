@@ -146,7 +146,7 @@ int scte35_splice_info_section_read(scte35_splice_info_section *sis, uint8_t *bu
       
       if (scte35TableBuffer->bufferUsedSz < scte35TableBuffer->bufferAllocSz)
       {
-         LOG_DEBUG ("scte35_splice_info_section_read: catBuffer not yet full -- returning");
+         LOG_DEBUG ("scte35_splice_info_section_read: scte35Buffer not yet full -- returning");
          return 0;
       }
 

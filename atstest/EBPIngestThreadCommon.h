@@ -67,7 +67,7 @@ void checkPTSAgainstSCTE35Points_AllBoundaries (int threadNum, ebp_stream_info_t
 void addSCTE35Point (varray_t* scte35List, uint64_t PTS, int threadNum, int partitionID, uint32_t PID);
 int checkPTSAgainstSCTE35Points (varray_t* scte35List, uint64_t PTS, uint64_t deltaSCTE35PTS, int threadNum,
                                   int partitionID, uint32_t PID);
-void checkEBPAgainstSCTE35Points (varray_t* scte35List, uint64_t PTS, uint64_t deltaSCTE35PTS, int threadNum,
+int checkEBPAgainstSCTE35Points (varray_t* scte35List, uint64_t PTS, uint64_t deltaSCTE35PTS, int threadNum,
                                   int partitionID, uint32_t PID);
 
 

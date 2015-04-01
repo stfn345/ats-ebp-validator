@@ -902,8 +902,16 @@ int detectBoundary(int threadNum, ebp_t* ebp, ebp_stream_info_t *streamInfo, uin
             {
                // check against SCTE35
                
-               checkEBPAgainstSCTE35Points (ebpBoundaryInfo[i].listSCTE35, PTS, g_ATSTestAppConfig.ebpSCTE35PTSJitterSecs * 90000, threadNum,
-                  i /* partitionID */, streamInfo->PID);
+               if (checkEBPAgainstSCTE35Points (ebpBoundaryInfo[i].listSCTE35, PTS, g_ATSTestAppConfig.ebpSCTE35PTSJitterSecs * 90000, threadNum,
+                  i /* partitionID */, streamInfo->PID))
+               {
+                  char ptsString[13];
+                  reportAddInfoLogArgs("IngestThread %d: PTS %"PRId64" (%s) matches SCTE35 PTS for partition %d: PID %d: distance from last PTS = %"PRId64"", 
+                     threadNum, PTS, pts_dts_to_string(PTS, ptsString), i /* partitionID */, streamInfo->PID, PTS - ebpBoundaryInfo[i].lastPTS);
+
+                  // reset the lastPTS, because the SCTE35-inspired EBP will violate the prescribed EBP periodicity
+                  ebpBoundaryInfo[i].lastPTS = 0;
+               }
             }
          }
       }
@@ -1010,8 +1018,16 @@ int detectBoundary(int threadNum, ebp_t* ebp, ebp_stream_info_t *streamInfo, uin
       if (isBoundary[i] && ebpBoundaryInfo[i].listSCTE35 != NULL)
       {
          // check against SCTE35  
-         checkEBPAgainstSCTE35Points (ebpBoundaryInfo[i].listSCTE35, PTS, g_ATSTestAppConfig.ebpSCTE35PTSJitterSecs * 90000, threadNum,
-            i /* partitionID */, streamInfo->PID);
+         if (checkEBPAgainstSCTE35Points (ebpBoundaryInfo[i].listSCTE35, PTS, g_ATSTestAppConfig.ebpSCTE35PTSJitterSecs * 90000, threadNum,
+            i /* partitionID */, streamInfo->PID))
+         {
+            char ptsString[13];
+            reportAddInfoLogArgs("IngestThread %d: PTS %"PRId64" (%s) matches SCTE35 PTS for partition %d: PID %d: distance from last PTS = %"PRId64"", 
+               threadNum, PTS, pts_dts_to_string(PTS, ptsString), i /* partitionID */, streamInfo->PID, PTS - ebpBoundaryInfo[i].lastPTS);
+
+            // reset the lastPTS, because the SCTE35-inspired EBP will violate the prescribed EBP periodicity
+            ebpBoundaryInfo[i].lastPTS = 0;
+         }
       }
    }
 
@@ -1171,9 +1187,10 @@ int checkPTSAgainstSCTE35Points (varray_t* scte35List, uint64_t PTS, uint64_t de
    return nReturnCode;
 }
 
-void checkEBPAgainstSCTE35Points (varray_t* scte35List, uint64_t PTS, uint64_t deltaSCTE35PTS, int threadNum,
+int checkEBPAgainstSCTE35Points (varray_t* scte35List, uint64_t PTS, uint64_t deltaSCTE35PTS, int threadNum,
    int partitionID, uint32_t PID)
 {
+   int returnCode = 0;
    // check if PTS is sufficiently near the SCTE35 points
 
 //   LOG_INFO_ARGS("IngestThread %d: checkEBPAgainstSCTE35Points: PTS = %"PRId64" for partition %d: PID %d, deltaSCTE35PTS = %"PRId64"", 
@@ -1193,12 +1210,14 @@ void checkEBPAgainstSCTE35Points (varray_t* scte35List, uint64_t PTS, uint64_t d
             threadNum, PTS, *SCTE35PTS, partitionID, PID);
          reportAddInfoLogArgs("IngestThread %d: PTS %"PRId64" matches SCTE35 PTS %"PRId64" for partition %d: PID %d", 
             threadNum, PTS, *SCTE35PTS, partitionID, PID);
-
          varray_remove (scte35List, i);
          free (SCTE35PTS);
+         returnCode = 1;
          break;
       }
    }
+
+   return returnCode;
 }
 
 void addSCTE35Point_AllBoundaries (int threadNum, ebp_stream_info_t *streamInfo, uint64_t PTS)
