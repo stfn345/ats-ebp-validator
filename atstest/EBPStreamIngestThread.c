@@ -42,8 +42,8 @@ void *EBPStreamIngestThreadProc(void *threadParams)
    int returnCode = 0;
 
    ebp_stream_ingest_thread_params_t * ebpStreamIngestThreadParams = (ebp_stream_ingest_thread_params_t *)threadParams;
-   LOG_INFO_ARGS("EBPStreamIngestThread %d starting...ebpStreamIngestThreadParams = %x", 
-      ebpStreamIngestThreadParams->ebpIngestThreadParams->threadNum, (unsigned int)ebpStreamIngestThreadParams);
+   LOG_INFO_ARGS("EBPStreamIngestThread %d starting...ebpStreamIngestThreadParams = %p", 
+      ebpStreamIngestThreadParams->ebpIngestThreadParams->threadNum, ebpStreamIngestThreadParams);
 
    mpeg2ts_stream_t *m2s = NULL;
 

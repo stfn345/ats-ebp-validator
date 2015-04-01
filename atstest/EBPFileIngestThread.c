@@ -42,8 +42,8 @@ void *EBPFileIngestThreadProc(void *threadParams)
    int returnCode = 0;
 
    ebp_file_ingest_thread_params_t * ebpFileIngestThreadParams = (ebp_file_ingest_thread_params_t *)threadParams;
-   LOG_INFO_ARGS("EBPFileIngestThread %d starting...ebpFileIngestThreadParams = %x", 
-      ebpFileIngestThreadParams->ebpIngestThreadParams->threadNum, (unsigned int)ebpFileIngestThreadParams);
+   LOG_INFO_ARGS("EBPFileIngestThread %d starting...ebpFileIngestThreadParams = %p", 
+      ebpFileIngestThreadParams->ebpIngestThreadParams->threadNum, ebpFileIngestThreadParams);
 
    // do file reading here
    FILE *infile = NULL;

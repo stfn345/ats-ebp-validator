@@ -86,7 +86,7 @@ int fifo_push (thread_safe_fifo_t *fifo, void *element)
 
    fifo->push_counter++;
    
-   printThreadDebugMessage ("fifo_push (%d): doing push: fifo->value = %x\n", fifo->id, (unsigned int)element);
+   printThreadDebugMessage ("fifo_push (%d): doing push: fifo->value = %p\n", fifo->id, element);
 
 
    printThreadDebugMessage ("fifo_push (%d): calling pthread_cond_signal\n", fifo->id);
@@ -167,7 +167,7 @@ int fifo_pop_peek (thread_safe_fifo_t *fifo, void **element, int isPop)
       *element = varray_peek(fifo->queue);
    }
 
-   printThreadDebugMessage ("fifo_pop_peek (%d): setting element: *element = %x\n", fifo->id, (unsigned int)(*element));
+   printThreadDebugMessage ("fifo_pop_peek (%d): setting element: *element = %p\n", fifo->id, *element);
 
    printThreadDebugMessage ("fifo_pop_peek (%d): calling pthread_mutex_unlock\n", fifo->id);
    returnCode = pthread_mutex_unlock (&(fifo->fifo_mutex));
