@@ -146,3 +146,20 @@ int pes_demux_process_ts_packet(ts_packet_t *ts, elementary_stream_info_t *es_in
    }
    return 1;   
 }
+
+char* pts_dts_to_string(uint64_t pts_dts, char inout[13]) {
+   uint32_t msec = (uint32_t)((pts_dts / 90) % 1000);
+   uint32_t sec = (uint32_t)((pts_dts / 90000) % 60);
+   uint32_t min = (uint32_t)((pts_dts / (90000 * 60)) % 60);
+   uint32_t hour = (uint32_t)((pts_dts / (90000 * 3600)));
+
+   sprintf(inout, "%02d", hour);
+   inout[2] = ':';
+   sprintf(inout + 3, "%02d", min);
+   inout[5] = ':';
+   sprintf(inout + 6, "%02d", sec);
+   inout[8] = '.';
+   sprintf(inout + 9, "%03d", msec);
+
+   return inout;
+}

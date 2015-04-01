@@ -68,6 +68,7 @@ pes_demux_t* pes_demux_new(pes_processor_t pes_processor);
 void pes_demux_free(pes_demux_t *pdm); 
 int pes_demux_process_ts_packet(ts_packet_t *ts, elementary_stream_info_t *es_info, void *arg); 
 
+char* pts_dts_to_string(uint64_t pts_dts, char inout[13]);
 
 #ifdef __cplusplus
 }
