@@ -143,6 +143,7 @@ void streamIngestCleanup(ebp_stream_ingest_thread_params_t *ebpStreamIngestThrea
    }
 
    LOG_INFO_ARGS ("EBPStreamIngestThread %d exiting...", ebpStreamIngestThreadParams->ebpIngestThreadParams->threadNum);
+   printf ("EBPStreamIngestThread %d exiting...\n", ebpStreamIngestThreadParams->ebpIngestThreadParams->threadNum);
    free (ebpStreamIngestThreadParams->ebpIngestThreadParams);
    free (ebpStreamIngestThreadParams);
    //pthread_exit(NULL);

@@ -1488,12 +1488,15 @@ void analyzeResults(int numIngests, int numStreams, ebp_stream_info_t **streamIn
    LOG_INFO ("");
 }
 
-void printStreamInfo(int numIngests, int numStreams, ebp_stream_info_t **streamInfoArray, char **ingestNames)
+void printStreamInfo(int numIngests, int numStreams, ebp_stream_info_t **streamInfoArray, char **ingestNames,
+                     program_stream_info_t *programStreamInfo)
 {
    LOG_INFO ("");
    LOG_INFO ("");
    LOG_INFO ("STREAM INFO");
    LOG_INFO ("");
+
+
 
    for (int i=0; i<numIngests; i++)
    {
@@ -1513,6 +1516,19 @@ void printStreamInfo(int numIngests, int numStreams, ebp_stream_info_t **streamI
          LOG_INFO_ARGS ("      PID %d (%s)", streamInfo->PID, (streamInfo->isVideo?"VIDEO":"AUDIO"));
 
          printBoundaryInfoArray(streamInfo->ebpBoundaryInfo);
+
+         ebp_descriptor_t* ebpDescriptor = getEBPDescriptorFromProgramStreamStruct (&(programStreamInfo[i]), streamInfo->PID);
+         if (ebpDescriptor != NULL)
+         {
+            ebp_descriptor_print_stdout(ebpDescriptor);
+         }
+
+         ebp_t* ebp = getEBPFromProgramStreamStruct (&(programStreamInfo[i]), streamInfo->PID);
+         if (ebp != NULL)
+         {
+            ebp_print_stdout(ebp);
+         }
+
       }
       LOG_INFO ("");
 
@@ -1687,7 +1703,7 @@ void runStreamIngestMode(int numIngestStreams, char **ingestAddrs, int peekFlag,
       exit (-1);
    }
 
-   printStreamInfo(numIngestStreams, numStreamsPerIngest, streamInfoArray, ingestAddrs);
+   printStreamInfo(numIngestStreams, numStreamsPerIngest, streamInfoArray, ingestAddrs, programStreamInfo);
    if (peekFlag)
    {
       return;
@@ -1731,7 +1747,8 @@ void runStreamIngestMode(int numIngestStreams, char **ingestAddrs, int peekFlag,
       else if (myChar == 'r')
       {
          printf ("Printing report...\n");
-         char *reportPath = reportPrint(numIngestStreams, numStreamsPerIngest, streamInfoArray, ingestAddrs, ingestPassFails);
+         char *reportPath = reportPrint(numIngestStreams, numStreamsPerIngest, streamInfoArray, ingestAddrs, 
+            ingestPassFails, programStreamInfo);
          if (reportPath == NULL)
          {
             printf ("Report generation FAILED!\n");
@@ -1780,6 +1797,8 @@ void runStreamIngestMode(int numIngestStreams, char **ingestAddrs, int peekFlag,
       reportAddErrorLog("Main:stopSocketReceiveThreads: FAIL: error waiting for socket receive threads to exit");
       exit (-1);
    }
+   printf ("All socket receive threads exited\n");
+
 
    returnCode = waitForThreadsToExit(numIngestStreams, numStreamsPerIngest, streamIngestThreads, analysisThreads, &threadAttr);
    if (returnCode != 0)
@@ -1788,6 +1807,7 @@ void runStreamIngestMode(int numIngestStreams, char **ingestAddrs, int peekFlag,
       reportAddErrorLog ("runStreamIngestMode: FATAL ERROR during waitForThreadsToExit: exiting"); 
       exit (-1);
    }
+   printf ("All ingest threads exited\n");
 
    pthread_attr_destroy(&threadAttr);
 
@@ -1848,7 +1868,7 @@ void runFileIngestMode(int numFiles, char **filePaths, int peekFlag)
       exit (-1);
    }
 
-   printStreamInfo(numFiles, numStreamsPerFile, streamInfoArray, filePaths);
+   printStreamInfo(numFiles, numStreamsPerFile, streamInfoArray, filePaths, programStreamInfo);
    if (peekFlag)
    {
       return;
@@ -2168,3 +2188,4 @@ void printIngestStatus (ebp_socket_receive_thread_params_t **ebpSocketReceiveThr
    }
    printf ("\n");
 }
+

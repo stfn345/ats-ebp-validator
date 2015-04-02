@@ -296,6 +296,7 @@ void *EBPSegmentAnalysisThreadProc(void *threadParams)
    }
 
    LOG_INFO_ARGS ("EBPSegmentAnalysisThread %d: exiting...", ebpSegmentAnalysisThreadParams->threadID);
+   printf ("EBPSegmentAnalysisThread %d: exiting...\n", ebpSegmentAnalysisThreadParams->threadID);
    free (ebpSegmentAnalysisThreadParams->streamInfos);
    free (ebpSegmentAnalysisThreadParams);
    return NULL;

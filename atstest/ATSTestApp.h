@@ -24,19 +24,6 @@
 //#define PREREAD_EBP_SEARCH_TIME_MSECS   10000
 //#define PREREAD_EBP_SEARCH_TIME_MSECS   10000000
 
-typedef struct
-{
-   int numStreams;
-   uint32_t *stream_types;
-   uint32_t *PIDs;
-   ebp_descriptor_t **ebpDescriptors;
-   ebp_t **ebps;
-
-   // concatenation of language, component name, and AC3 language
-   char **language;
-
-} program_stream_info_t;
-
 
 ebp_boundary_info_t *setupDefaultBoundaryInfoArray();
 void printBoundaryInfoArray(ebp_boundary_info_t *boundaryInfoArray);
@@ -45,7 +32,8 @@ int modBoundaryInfoArray (ebp_descriptor_t *ebpDescriptor, ebp_t *ebp, ebp_bound
    ebp_stream_info_t *videoStreamInfo);
 void populateProgramStreamInfo(program_stream_info_t *programStreamInfo, mpeg2ts_program_t *m2p);
 
-void printStreamInfo(int numIngests, int numStreams, ebp_stream_info_t **streamInfoArray, char **ingestNames);
+void printStreamInfo(int numIngests, int numStreams, ebp_stream_info_t **streamInfoArray, char **ingestNames,
+                     program_stream_info_t *programStreamInfo);
 void freeProgramStreamInfo (program_stream_info_t *programStreamInfo);
 
 int prereadFiles(int numFiles, char **fileNames, program_stream_info_t *programStreamInfo);
@@ -93,6 +81,8 @@ int getFileWithVideoPID(program_stream_info_t *programStreamInfo, int numFiles, 
 
 void printIngestStatus (ebp_socket_receive_thread_params_t **ebpSocketReceiveThreadParams, int numIngestStreams, int numStreams,
                         ebp_stream_info_t **streamInfoArray);
+
+
 
 
 #endif // __H_ATSTESTAPP_767JKS

@@ -226,10 +226,12 @@ int cb_read_or_peek (circular_buffer_t *cb, uint8_t* bytes, int bytesSz, int isP
       if (isPeek)
       {
          cb->peekBufferTraversals++;
+ //        printf ("peekBufferTraversals incrementing\n");
       }
       else
       {
          cb->readBufferTraversals++;
+ //        printf ("readBufferTraversals incrementing\n");
       }
    }
 
@@ -314,6 +316,8 @@ int cb_write (circular_buffer_t *cb, uint8_t* bytes, int bytesSz)
    {
       cb->writePtr = cb->buf;
       cb->writeBufferTraversals++;
+ //     printf ("writeBufferTraversals incrementing\n");
+
    }
 
    memcpy (cb->writePtr, bytes + sz1, sz2);

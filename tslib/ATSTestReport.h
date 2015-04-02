@@ -22,6 +22,7 @@
 #include <stdarg.h>
 
 #include "../atstest/EBPCommon.h"
+#include "../atstest/ebp.h"
 
 typedef struct
 {
@@ -44,15 +45,17 @@ void reportAddInfoLogArgs (const char *fmt, ...);
 void reportClearData(int numIngests, int numStreams, ebp_stream_info_t **streamInfoArray, int *filePassFails);
 void reportInit();
 void reportCleanup();
-char *reportPrint(int numIngests, int numStreams, ebp_stream_info_t **streamInfoArray, char **ingestNames, int *filePassFails);
+char *reportPrint(int numIngests, int numStreams, ebp_stream_info_t **streamInfoArray, char **ingestNames, 
+                  int *filePassFails, program_stream_info_t *programStreamInfo);
 
 void reportPrintBoundaryInfoArray(FILE *reportFile, ebp_boundary_info_t *boundaryInfoArray);
-void reportPrintStreamInfo(FILE *reportFile, int numIngests, int numStreams, ebp_stream_info_t **streamInfoArray, char **ingestNames);
+void reportPrintStreamInfo(FILE *reportFile, int numIngests, int numStreams, ebp_stream_info_t **streamInfoArray, 
+                           char **ingestNames, program_stream_info_t *programStreamInfo);
+void reportPrintEBPDescriptor(FILE *reportFile, const ebp_descriptor_t *ebp_desc);
+void reportPrintEBPStruct(FILE *reportFile, const ebp_t *ebp);
 
-
-
-
-
+ebp_t* getEBPFromProgramStreamStruct (program_stream_info_t *programStreamInfo, uint32_t PID);
+ebp_descriptor_t* getEBPDescriptorFromProgramStreamStruct (program_stream_info_t *programStreamInfo, uint32_t PID);
 
 #endif  // __H_ATS_TEST_REPORT
 

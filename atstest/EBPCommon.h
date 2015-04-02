@@ -21,6 +21,7 @@
 #include "ThreadSafeFIFO.h"
 #include "log.h"
 #include "varray.h"
+#include "ebp.h"
 
 
 #define EBP_NUM_PARTITIONS 10  // 0 - 9
@@ -63,6 +64,21 @@ typedef struct
    int ebpChunkCntr;
 
 } ebp_stream_info_t;
+
+typedef struct
+{
+   int numStreams;
+   uint32_t *stream_types;
+   uint32_t *PIDs;
+   ebp_descriptor_t **ebpDescriptors;
+   ebp_t **ebps;
+
+   // concatenation of language, component name, and AC3 language
+   char **language;
+
+} program_stream_info_t;
+
+
 
 int get2DArrayIndex (int fileIndex, int streamIndex, int numStreams);
 

@@ -126,7 +126,8 @@ void reportAddErrorLog (char *errorMsg)
    varray_add(g_listErrorMsgs, temp);
 }
 
-char *reportPrint(int numIngests, int numStreams, ebp_stream_info_t **streamInfoArray, char **ingestNames, int *filePassFails)
+char *reportPrint(int numIngests, int numStreams, ebp_stream_info_t **streamInfoArray, char **ingestNames, int *filePassFails,
+                  program_stream_info_t *programStreamInfo)
 {
    char reportPath[2048];
    if (getcwd(reportPath, 1024) == NULL)
@@ -155,7 +156,7 @@ char *reportPrint(int numIngests, int numStreams, ebp_stream_info_t **streamInfo
    }
    fprintf (myFile, "EBP Conformance Test Report\n");
 
-   reportPrintStreamInfo(myFile, numIngests, numStreams, streamInfoArray, ingestNames);
+   reportPrintStreamInfo(myFile, numIngests, numStreams, streamInfoArray, ingestNames, programStreamInfo);
 
    fprintf (myFile, "\nERROR Msgs:\n");
    for (int i=0; i<varray_length(g_listErrorMsgs); i++)
@@ -286,7 +287,8 @@ void reportPrintBoundaryInfoArray(FILE *reportFile, ebp_boundary_info_t *boundar
    }
 }
 
-void reportPrintStreamInfo(FILE *reportFile, int numIngests, int numStreams, ebp_stream_info_t **streamInfoArray, char **ingestNames)
+void reportPrintStreamInfo(FILE *reportFile, int numIngests, int numStreams, ebp_stream_info_t **streamInfoArray, char **ingestNames,
+                           program_stream_info_t *programStreamInfo)
 {
    fprintf (reportFile, "\n");
    fprintf (reportFile, "\n");
@@ -309,8 +311,130 @@ void reportPrintStreamInfo(FILE *reportFile, int numIngests, int numStreams, ebp
          fprintf (reportFile, "      PID %d (%s)\n", streamInfo->PID, (streamInfo->isVideo?"VIDEO":"AUDIO"));
 
          reportPrintBoundaryInfoArray(reportFile, streamInfo->ebpBoundaryInfo);
+         
+         ebp_descriptor_t* ebpDescriptor = getEBPDescriptorFromProgramStreamStruct (&(programStreamInfo[i]), streamInfo->PID);
+         if (ebpDescriptor != NULL)
+         {
+            reportPrintEBPDescriptor(reportFile, ebpDescriptor);
+         }
+         else
+         {
+            fprintf (reportFile, "\n         EBP Descriptor not Found\n");
+         }
+
+         ebp_t* ebp = getEBPFromProgramStreamStruct (&(programStreamInfo[i]), streamInfo->PID);
+         if (ebp != NULL)
+         {
+            reportPrintEBPStruct(reportFile, ebp);
+         }
+         else
+         {
+            if (ebpDescriptor != NULL)
+            {
+               fprintf (reportFile, "         EBP Struct search not performed\n");
+            }
+            else
+            {
+               fprintf (reportFile, "         EBP Struct not found\n");
+            }
+         }
+
+         fprintf (reportFile, "\n");
+
+
       }
       fprintf (reportFile, "\n");
    }
+}
+
+void reportPrintEBPDescriptor(FILE *reportFile, const ebp_descriptor_t *ebp_desc)
+{
+   fprintf (reportFile, "\n         EBP Descriptor:\n");
+   fprintf (reportFile, "            tag = %d, length = %d, timescale_flag = %d, ticks_per_second = %d, ebp_distance_width_minus_1 = %d\n", 
+      ebp_desc->descriptor.tag, ebp_desc->descriptor.length, 
+      ebp_desc->timescale_flag, ebp_desc->ticks_per_second, ebp_desc->ebp_distance_width_minus_1);
+
+   int num_partitions = 0;
+   if (ebp_desc->partition_data != NULL)
+   {
+      num_partitions = vqarray_length(ebp_desc->partition_data);
+      fprintf (reportFile, "            num_partitions = %d\n", num_partitions);
+
+      for (int i=0; i<num_partitions; i++)
+      {
+         ebp_partition_data_t* partition = (ebp_partition_data_t*)vqarray_get(ebp_desc->partition_data, i);
+
+         fprintf (reportFile, "            partition[%d]:\n", i);
+         fprintf (reportFile, "               ebp_data_explicit_flag = %d, representation_id_flag = %d, partition_id = %d, ebp_pid = %d\n", 
+            partition->ebp_data_explicit_flag, partition->representation_id_flag, partition->partition_id,
+            partition->ebp_pid);
+         fprintf (reportFile, "               boundary_flag = %d, ebp_distance = %d, sap_type_max = %d, acquisition_time_flag = %d, representation_id = %"PRId64"\n", 
+            partition->boundary_flag, partition->ebp_distance, partition->sap_type_max, 
+            partition->acquisition_time_flag, partition->representation_id);
+      }
+   }
+   else
+   {
+      fprintf (reportFile, "            num_partitions = %d:\n", num_partitions);
+   }
+}
+
+void reportPrintEBPStruct(FILE *reportFile, const ebp_t *ebp)
+{
+    fprintf (reportFile, "         EBP struct:\n");
+    fprintf (reportFile, "            ebp_fragment_flag = %d\n", ebp->ebp_fragment_flag);
+    fprintf (reportFile, "            ebp_segment_flag = %d\n", ebp->ebp_segment_flag);
+    fprintf (reportFile, "            ebp_sap_flag = %d\n", ebp->ebp_sap_flag);
+    fprintf (reportFile, "            ebp_grouping_flag = %d\n", ebp->ebp_grouping_flag);
+    fprintf (reportFile, "            ebp_time_flag = %d\n", ebp->ebp_time_flag);
+    fprintf (reportFile, "            ebp_concealment_flag = %d\n", ebp->ebp_concealment_flag);
+    fprintf (reportFile, "            ebp_extension_flag = %d\n", ebp->ebp_extension_flag);
+    fprintf (reportFile, "            ebp_ext_partition_flag = %d\n", ebp->ebp_ext_partition_flag);
+    fprintf (reportFile, "            ebp_sap_type = %d\n", ebp->ebp_sap_type);
+    
+    int num_ebp_grouping_ids = 0;
+    if ((uint32_t)ebp->ebp_grouping_ids != 0)
+    {
+        fprintf (reportFile, "            ebp_grouping_ids = %x\n", (uint32_t)ebp->ebp_grouping_ids);
+        num_ebp_grouping_ids = vqarray_length(ebp->ebp_grouping_ids);
+        fprintf (reportFile, "            num_ebp_grouping_ids = %d\n", num_ebp_grouping_ids);
+        for (int i=0; i<num_ebp_grouping_ids; i++)
+        {
+            fprintf (reportFile, "                ebp_grouping_ids[%d] = %d\n", i, *((uint32_t*)vqarray_get(ebp->ebp_grouping_ids, i)));
+        }
+    }
+    else
+    {
+        fprintf (reportFile, "            num_ebp_grouping_ids = %d\n", num_ebp_grouping_ids);
+    }
+
+    fprintf (reportFile, "            ebp_acquisition_time = %"PRId64"\n", ebp->ebp_acquisition_time);
+    fprintf (reportFile, "            ebp_ext_partitions = %d\n", ebp->ebp_ext_partitions);
+}
+
+ebp_t* getEBPFromProgramStreamStruct (program_stream_info_t *programStreamInfo, uint32_t PID)
+{
+   for (int i=0; i<programStreamInfo->numStreams; i++)
+   {
+      if ((programStreamInfo->PIDs)[i] == PID)
+      {
+         return (programStreamInfo->ebps)[i];
+      }
+   }
+
+   return NULL;
+}
+
+ebp_descriptor_t* getEBPDescriptorFromProgramStreamStruct (program_stream_info_t *programStreamInfo, uint32_t PID)
+{
+   for (int i=0; i<programStreamInfo->numStreams; i++)
+   {
+      if ((programStreamInfo->PIDs)[i] == PID)
+      {
+         return (programStreamInfo->ebpDescriptors)[i];
+      }
+   }
+
+   return NULL;
 }
 

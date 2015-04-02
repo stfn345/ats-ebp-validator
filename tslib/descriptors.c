@@ -479,7 +479,7 @@ descriptor_t* max_bitrate_descriptor_read(descriptor_t *desc, bs_t *b)
 
    bs_skip_u(b, 2);
    maxbr->max_bitrate = bs_read_u(b, 22);
-   LOG_INFO_ARGS ("maxbr->max_bitrate = %d\n", maxbr->max_bitrate);
+   LOG_INFO_ARGS ("maxbr->max_bitrate = %d", maxbr->max_bitrate);
 
    return (descriptor_t *)maxbr;
 }
