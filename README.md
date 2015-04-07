@@ -18,8 +18,11 @@ The main purpose of the Tool is to verify that the Encoder Boundary Points (EBP'
 
 ## Functional Overview
 To execute a test, the tool performs the following steps:
+
 1. **"Peek" Phase** -- An assessment is performed for each transport stream where the program streams and their accompanying EBP parameters are discovered.  In the command line options to follow, this is called the “peek” phase.  Among the EBP information discovered for each program stream are the EBP partitions present in each stream and whether those partitions are signaled explicitly or implicitly.  The Tool handles all possible combinations of explicit/implicit EBP signaling discussed in the ATS specification (REF HERE).
+
 2. **Alignment Baseline** -- During the "peek" phase, the tool is queueing up EBPs from all input streams.  At the conclusion of the peek phase, the tool must locate a starting point in the queues in which all EBPs are aligned.  To do this, the queue with the *latest* EBP PTS at its head becomes the baseline.  All other queues are trimmed until they all begin with the same PTS.  In situtations where the streams do not have aligned EBPs, the test may fail at this very early step.
+
 3. **Test** -- At this point, the Tool begins the actual test on the transport streams.  Multiple ingest threads, one per transport stream, are launched so that the test is performed in real-time.  As the ingest threads find EBP’s, they hand off the EBP’s to analysis threads that do the comparison across transport streams.   A summary result report is printed either at the end of the test (in the case of file-base transport streams), or at the request of the user (in the case of multicast transport streams).
 
 ## Operation
@@ -29,7 +32,11 @@ The Tool ingests transport streams in two ways: as files, and as network multica
 
 where the available options are:
 
-`    -p: “peek” mode -- only perform initial diagnosis of stream (elementary streams, EBP descriptor info, etc); does not perform EBP validation.`
+```
+    -p:
+    “peek” mode -- only perform initial diagnosis of stream (elementary streams,
+    EBP descriptor info, etc); does not perform EBP validation.
+```
 
 The ATSTestApp then runs until the contents of all the files have been analyzed.  A log (with a default name EBPTestLog.txt) is written, at the end of which is a pass/fail report on the findings.  The log also contains detailed information on the EBP PTS’s found as well as on any errors encountered.
 
@@ -40,9 +47,13 @@ For the network multicast ingest case, the command-line syntax is:
 where the available options are:
 
 ```
-    -p: “peek” mode -- only perform initial diagnosis of stream (elementary streams, EBP descriptor info, etc); does not perform EBP validation.
+    -p:
+    “peek” mode: only perform initial diagnosis of stream (elementary streams,
+    EBP descriptor info, etc); does not perform EBP validation.
 
-    -d: save transport stream to file; file will be of the form EBPStreamDump_IP.port.ts
+    -d:
+    save all transport stream to files: files will be of the form
+    EBPStreamDump_<IP>.<port>.ts
 ```
 
 The ATSTestApp opens sockets to receive the streams, and performs the “peek” analysis.  After this is complete, the actual test begins.  At this time the user is presented with a menu of options. *Note that if the peek phase is not completed, this menu will not appear.*
