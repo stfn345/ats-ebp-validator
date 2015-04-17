@@ -308,7 +308,6 @@ void *EBPSocketReceiveThreadProc(void *threadParams)
 
    LOG_INFO_ARGS ("EBPSocketReceiveThread %d: Exiting", ebpSocketReceiveThreadParams->threadNum);
    printf ("EBPSocketReceiveThread %d: Exiting...\n", ebpSocketReceiveThreadParams->threadNum);
-   //pthread_exit(NULL);
 
    // NOTE: calling code frees ebpSocketReceiveThreadParams
 

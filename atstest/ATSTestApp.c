@@ -1383,6 +1383,9 @@ int waitForThreadsToExit(int numIngests, int totalNumStreams,
 
    for (int threadIndex = 0; threadIndex < totalNumStreams; threadIndex++)
    {
+      LOG_INFO_ARGS("Main:waitForThreadsToExit: waiting for join on analysis thread %d", threadIndex);
+      printf("Main:waitForThreadsToExit: waiting for join on analysis thread %d\n", threadIndex);
+
       returnCode = pthread_join(*(analysisThreads[threadIndex]), &status);
       if (returnCode) 
       {
@@ -1395,10 +1398,15 @@ int waitForThreadsToExit(int numIngests, int totalNumStreams,
 
       LOG_INFO_ARGS("Main:waitForThreadsToExit: completed join with analysis thread %d: status = %ld", 
          threadIndex, (long)status);
+      printf("Main:waitForThreadsToExit: completed join with analysis thread %d: status = %ld\n", 
+         threadIndex, (long)status);
    }
 
    for (int threadIndex = 0; threadIndex < numIngests; threadIndex++)
    {
+      LOG_INFO_ARGS("Main:waitForThreadsToExit: waiting for join on ingest thread %d", threadIndex);
+      printf("Main:waitForThreadsToExit: waiting for join on ingest thread %d\n", threadIndex);
+
       returnCode = pthread_join(*(ingestThreads[threadIndex]), &status);
       if (returnCode) 
       {
@@ -1411,9 +1419,11 @@ int waitForThreadsToExit(int numIngests, int totalNumStreams,
 
       LOG_INFO_ARGS("Main:waitForThreadsToExit: completed join with ingest thread %d: status = %ld", 
          threadIndex, (long)status);
+      printf("Main:waitForThreadsToExit: completed join with ingest thread %d: status = %ld\n", 
+         threadIndex, (long)status);
    }
         
-   LOG_INFO ("Main:waitForThreadsToExit: exiting");
+   LOG_INFO ("Main:waitForThreadsToExit: complete");
    return returnCode;
 }
 
@@ -1426,6 +1436,9 @@ int waitForSocketReceiveThreadsToExit(int numIngestStreams,
 
    for (int threadIndex = 0; threadIndex < numIngestStreams; threadIndex++)
    {
+      LOG_INFO_ARGS("Main:waitForThreadsToExit: waiting for join on socket thread %d", threadIndex);
+      printf("Main:waitForThreadsToExit: waiting for join on socket thread %d\n", threadIndex);
+
       returnCode = pthread_join(*(socketReceiveThreads[threadIndex]), &status);
       if (returnCode) 
       {
@@ -1438,11 +1451,13 @@ int waitForSocketReceiveThreadsToExit(int numIngestStreams,
 
       LOG_INFO_ARGS("Main:waitForSocketReceiveThreadsToExit: completed join with socket receive thread %d: status = %ld", 
          threadIndex, (long)status);
+      printf("Main:waitForSocketReceiveThreadsToExit: completed join with socket receive thread %d: status = %ld\n", 
+         threadIndex, (long)status);
    }
-
-//   pthread_attr_destroy(threadAttr);
         
-   LOG_INFO ("Main:waitForSocketReceiveThreadsToExit: exiting");
+   LOG_INFO ("Main:waitForSocketReceiveThreadsToExit: complete");
+   printf ("Main:waitForSocketReceiveThreadsToExit: complete\n");
+
    return returnCode;
 }
 
@@ -1817,7 +1832,7 @@ void runStreamIngestMode(int numIngestStreams, char **ingestAddrs, int peekFlag,
       reportAddErrorLog ("runStreamIngestMode: FATAL ERROR during waitForThreadsToExit: exiting"); 
       exit (-1);
    }
-   printf ("All ingest threads exited\n");
+   printf ("All ingest and analysis threads exited\n");
 
    pthread_attr_destroy(&threadAttr);
 
@@ -1845,8 +1860,6 @@ void runStreamIngestMode(int numIngestStreams, char **ingestAddrs, int peekFlag,
 
 
    LOG_INFO ("runStreamIngestMode: exiting");
-
- //  pthread_exit(NULL);
 }
 
 void runFileIngestMode(int numFiles, char **filePaths, int peekFlag)
@@ -1922,8 +1935,6 @@ void runFileIngestMode(int numFiles, char **filePaths, int peekFlag)
 
    freeProgramStreamInfo (programStreamInfo);
    free (filePassFails);
-
-   pthread_exit(NULL);
 
    LOG_INFO ("runFileIngestMode: exiting");
 }

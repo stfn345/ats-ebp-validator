@@ -174,6 +174,13 @@ int cb_read_or_peek (circular_buffer_t *cb, uint8_t* bytes, int bytesSz, int isP
 
    if (usedSz == 0)
    {
+      if (cb->disabled)
+      {
+         // unlock mutex before returning
+         pthread_mutex_unlock (&(cb->mutex));
+         return -99;
+      }
+
       returnCode = pthread_cond_wait(&(cb->cb_nonempty_cond), &(cb->mutex));
       if (returnCode != 0)
       {
@@ -182,13 +189,6 @@ int cb_read_or_peek (circular_buffer_t *cb, uint8_t* bytes, int bytesSz, int isP
          reportAddErrorLogArgs ("EBPSreamBuffer: cb_read_or_peek: pthread_cond_wait failed: %d", returnCode);
          pthread_mutex_unlock (&(cb->mutex));
          return -1;
-      }
-
-      if (cb->disabled)
-      {
-         // unlock mutex before returning
-         pthread_mutex_unlock (&(cb->mutex));
-         return -99;
       }
 
       if (isPeek)

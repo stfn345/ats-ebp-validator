@@ -135,6 +135,7 @@ void streamIngestCleanup(ebp_stream_ingest_thread_params_t *ebpStreamIngestThrea
 
    int returnCode = 0;
    void *element = NULL;
+   // push a NULL element onto each queue to signal the analysis threads that all data has been processed
    for (int i=0; i<ebpStreamIngestThreadParams->ebpIngestThreadParams->numStreams; i++)
    {
       returnCode = fifo_push (streamInfos[i]->fifo, element);
@@ -156,7 +157,6 @@ void streamIngestCleanup(ebp_stream_ingest_thread_params_t *ebpStreamIngestThrea
    printf ("EBPStreamIngestThread %d exiting...\n", ebpStreamIngestThreadParams->ebpIngestThreadParams->threadNum);
    free (ebpStreamIngestThreadParams->ebpIngestThreadParams);
    free (ebpStreamIngestThreadParams);
-   //pthread_exit(NULL);
 }
 
 

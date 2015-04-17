@@ -156,7 +156,6 @@ void cleanupAndExit(ebp_file_ingest_thread_params_t *ebpFileIngestThreadParams)
    LOG_INFO_ARGS ("EBPFileIngestThread %d exiting...", ebpFileIngestThreadParams->ebpIngestThreadParams->threadNum);
    free (ebpFileIngestThreadParams->ebpIngestThreadParams);
    free (ebpFileIngestThreadParams);
-   pthread_exit(NULL);
 }
 
 

@@ -745,6 +745,7 @@ int ingest_pmt_processor(mpeg2ts_program_t *m2p, void *arg)
 
          if (handle_pid)
          {
+            LOG_INFO ("pmt_processor -- allocating....");
             pes_demux_t *pd = pes_demux_new(validate_pes_packet);
             pd->pes_arg = arg;
             pd->pes_arg_destructor = NULL;
@@ -925,6 +926,7 @@ int detectBoundary(int threadNum, ebp_t* ebp, ebp_stream_info_t *streamInfo, uin
          if (PTS > *PTSTemp)
          {
             varray_pop(ebpBoundaryInfo[i].queueLastImplicitPTS);
+            free (PTSTemp);
             isBoundary[i] = 1;
             nReturnCode = 1;
 
@@ -1162,6 +1164,7 @@ void addSCTE35Point (varray_t* scte35List, uint64_t PTS, int threadNum, int part
       if (PTS < *PTSTemp)
       {
          // insert into SCTEList
+         // GORP: free thee later
          uint64_t *PTSCopy = (uint64_t *) malloc (sizeof (uint64_t));
         *PTSCopy = PTS;
          varray_insert(scte35List, i, PTSCopy);

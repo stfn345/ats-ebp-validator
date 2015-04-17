@@ -361,6 +361,7 @@ int syncIncomingStreams (int threadID, int numFiles, ebp_stream_info_t **streamI
          {
             startPTS = ebpSegmentInfo->PTS;
          }
+
       }
    }
          
@@ -504,4 +505,6 @@ void cleanupEBPSegmentInfo (ebp_segment_info_t *ebpSegmentInfo)
    {
       ebp_descriptor_free((descriptor_t *)(ebpSegmentInfo->latestEBPDescriptor));
    }
+
+   free (ebpSegmentInfo);
 }

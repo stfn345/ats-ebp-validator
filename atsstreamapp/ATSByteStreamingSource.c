@@ -149,7 +149,6 @@ void *EBPFileStreamThreadProc(void *threadParams)
          ebpFileStreamThreadParams->threadNum, ebpFileStreamThreadParams->filePath, strerror(errno));
 
       free (ebpFileStreamThreadParams);
-      pthread_exit(NULL);
    }
 
 	struct sockaddr_in myAddr;
@@ -363,8 +362,6 @@ int main(int argc, char** argv)
       LOG_ERROR ("Main: FATAL ERROR during waitForThreadsToExit: exiting"); 
       exit (-1);
    }
-
-   pthread_exit(NULL);
 
    LOG_INFO ("Main: exiting");
    return 0;
