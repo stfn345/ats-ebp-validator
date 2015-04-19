@@ -82,6 +82,7 @@ typedef struct
    uint32_t *PIDs;
    ebp_descriptor_t **ebpDescriptors;
    ebp_t **ebps;
+   varray_t **ebpLists;
 
    // concatenation of language, component name, and AC3 language
    char **language;

@@ -46,6 +46,9 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "ATSTestDefines.h"
 #include "ATSTestAppConfig.h"
 
+#include "EBPPreReadStreamIngestThread.h"
+
+
 
 
 static int g_bPATFound = 0;
@@ -166,7 +169,7 @@ void printBoundaryInfoArray(ebp_boundary_info_t *boundaryInfoArray)
    }
 }
 
-int modBoundaryInfoArray (ebp_descriptor_t * ebpDescriptor, ebp_t *ebp, ebp_boundary_info_t *boundaryInfoArray,
+int modBoundaryInfoArray (ebp_descriptor_t * ebpDescriptor, ebp_t *ebp, varray_t* ebpList, ebp_boundary_info_t *boundaryInfoArray,
    int currentFileIndex, int currentStreamIndex, program_stream_info_t *programStreamInfo, int numFiles,
    ebp_stream_info_t *videoStreamInfo)
 {
@@ -259,6 +262,49 @@ int modBoundaryInfoArray (ebp_descriptor_t * ebpDescriptor, ebp_t *ebp, ebp_boun
          }
       }
    }
+   /*
+   else if (ebpList != NULL)
+   {
+      LOG_INFO_ARGS ("modBoundaryInfoArray: ebp_descriptor NULL, ebpList != NULL, list sz = %d",
+         varray_length(ebpList));
+
+      for (int ebpIndex = 0; ebpIndex<varray_length(ebpList); ebpIndex++)
+      {
+         ebp_t* ebpTemp = (ebp_t*) varray_get (ebpList, ebpIndex);
+
+         if (ebpTemp->ebp_fragment_flag)
+         {
+            boundaryInfoArray[EBP_PARTITION_FRAGMENT].isBoundary = 1;
+            boundaryInfoArray[EBP_PARTITION_FRAGMENT].isImplicit = 0;
+            boundaryInfoArray[EBP_PARTITION_FRAGMENT].implicitPID = 0;
+         }
+         if (ebpTemp->ebp_segment_flag)
+         {
+            boundaryInfoArray[EBP_PARTITION_SEGMENT].isBoundary = 1;
+            boundaryInfoArray[EBP_PARTITION_SEGMENT].isImplicit = 0;
+            boundaryInfoArray[EBP_PARTITION_SEGMENT].implicitPID = 0;
+         }
+         if (ebpTemp->ebp_ext_partition_flag)
+         {
+            uint8_t ebp_ext_partitions_temp = ebpTemp->ebp_ext_partitions;
+            ebp_ext_partitions_temp = ebp_ext_partitions_temp >> 1; // skip partition1d 0
+
+            // partiton 1 and 2 are not included in the extended partition mask, so skip them
+            for (int i=3; i<EBP_NUM_PARTITIONS; i++)
+            {
+               if (ebp_ext_partitions_temp & 0x1)
+               {
+                  boundaryInfoArray[i].isBoundary = 1;
+                  boundaryInfoArray[i].isImplicit = 0;
+                  boundaryInfoArray[i].implicitPID = 0;
+               }
+
+               ebp_ext_partitions_temp = ebp_ext_partitions_temp >> 1;
+            }
+         }
+      }
+   }
+   */
    else
    {
       LOG_INFO_ARGS ("modBoundaryInfoArray: both ebp_descriptor and ebp NULL: stream type = 0x%x", (programStreamInfo->stream_types)[currentStreamIndex]);
@@ -349,7 +395,7 @@ static int handle_pes_packet(pes_packet_t *pes, elementary_stream_info_t *esi, v
 
    ebp_stream_info_t streamInfo;  // this isnt really used for anything -- just a placeholder in the following
    streamInfo.PID = esi->elementary_PID;
-   ebp_t* ebp = getEBP(ts, &streamInfo, -1 /* threadNum */);
+   ebp_t* ebp = getEBP(ts, &streamInfo, -1);
          
    if (ATS_TEST_CASE_AUDIO_IMPLICIT_TRIGGER || ATS_TEST_CASE_AUDIO_XFILE_IMPLICIT_TRIGGER)
    {
@@ -387,6 +433,13 @@ static int handle_pes_packet(pes_packet_t *pes, elementary_stream_info_t *esi, v
          if ((programStreamInfo->PIDs)[i] == esi->elementary_PID)
          {
             (programStreamInfo->ebps)[i] = ebp_copy(ebp);
+
+            if ((programStreamInfo->ebpLists)[i] == NULL)
+            {
+               (programStreamInfo->ebpLists)[i] = varray_new();
+            }
+
+            varray_add ((programStreamInfo->ebpLists)[i], ebp_copy(ebp));
          }
       }
 
@@ -636,78 +689,40 @@ int prereadIngestStreams(int numIngestStreams, circular_buffer_t **ingestBuffers
 {
    LOG_INFO ("prereadIngestStreams: entering");
 
-   int num_packets = 4096;
-   int ts_buf_sz = TS_SIZE * num_packets;
-   uint8_t *ts_buf = malloc(ts_buf_sz);
+   pthread_t **preReadStreamIngestThreads = NULL;
+   ebp_preread_stream_ingest_thread_params_t **ebpPreReadStreamIngestThreadParamsOut = NULL;
+   pthread_attr_t threadAttr;
 
-   for (int i=0; i<numIngestStreams; i++)
+   int returnCode = startThreads_PreReadStreamIngest(numIngestStreams, programStreamInfo,
+      ingestBuffers, &preReadStreamIngestThreads, &threadAttr, &ebpPreReadStreamIngestThreadParamsOut);
+   if (returnCode != 0)
    {
-      LOG_INFO ("\n");
-      LOG_INFO_ARGS ("Main:prereadIngestStreams: IngestStream %d", i); 
-
-      // reset PAT/PMT read flags
-      g_bPATFound = 0;
-      g_bPMTFound = 0;
-      g_bEBPSearchEnded = 0;
-      g_streamStartTimeMsecs = -1;
-
-      mpeg2ts_stream_t *m2s = NULL;
-
-      if (NULL == (m2s = mpeg2ts_stream_new()))
-      {
-         LOG_ERROR_ARGS("Main:prereadIngestStreams: Error creating MPEG-2 STREAM object for ingestStream %d", i);
-         reportAddErrorLogArgs("Main:prereadIngestStreams: Error creating MPEG-2 STREAM object for ingestStream %d", i);
-         return -1;
-      }
-
-      // Register EBP descriptor parser
-      descriptor_table_entry_t *desc = calloc(1, sizeof(descriptor_table_entry_t));
-      desc->tag = EBP_DESCRIPTOR;
-      desc->free_descriptor = ebp_descriptor_free;
-      desc->print_descriptor = ebp_descriptor_print;
-      desc->read_descriptor = ebp_descriptor_read;
-      if (!register_descriptor(desc))
-      {
-         LOG_ERROR_ARGS("Main:prereadIngestStreams: FAIL: Could not register EBP descriptor parser for ingest stream %d", i);
-         reportAddErrorLogArgs("Main:prereadIngestStreams: FAIL: Could not register EBP descriptor parser for ingest stream %d", i);
-         return -1;
-      }
-      
-      m2s->pat_processor = (pat_processor_t)pat_processor;
-      m2s->arg = &(programStreamInfo[i]);
-      m2s->arg_destructor = NULL;
-
-      int num_bytes = 0;
-      while (!(g_bPATFound && g_bPMTFound && g_bEBPSearchEnded) && 
-         (num_bytes = cb_peek (ingestBuffers[i], ts_buf, ts_buf_sz)) > 0)
-      {
-         if (num_bytes % TS_SIZE)
-         {
-            LOG_ERROR_ARGS("Main:prereadFiles: FAIL: Incomplete transport packet received for ingest stream %d", i);
-            reportAddErrorLogArgs("Main:prereadFiles: FAIL: Incomplete transport packet received for ingest stream %d", i);
-            return -1;
-         }
-         num_packets = num_bytes / TS_SIZE;
-
-         for (int i = 0; i < num_packets; i++)
-         {
-            ts_packet_t *ts = ts_new();
-            ts_read(ts, ts_buf + i * TS_SIZE, TS_SIZE);
-            mpeg2ts_stream_read_ts_packet(m2s, ts);
-
-            // check if PAT/PMT read -- if so, break out
-            if (g_bPATFound && g_bPMTFound && g_bEBPSearchEnded)
-            {
-               LOG_DEBUG ("Main:prereadIngestStreams: PAT/PMT found");
-               break;
-            }
-         }
-      }
-
-      mpeg2ts_stream_free(m2s);
+      LOG_ERROR ("Main:teardownQueues: FAIL: error starting stream ingest preread");
+      reportAddErrorLogArgs ("Main:teardownQueues: FAIL: error starting stream ingest preread");
+      return -1;
+   }
+   
+   returnCode = waitForPreReadStreamIngestToExit(numIngestStreams,
+      preReadStreamIngestThreads, &threadAttr);
+   if (returnCode != 0)
+   {
+      LOG_ERROR ("Main:teardownQueues: FAIL: error waiting for stream ingest preread");
+      reportAddErrorLogArgs ("Main:teardownQueues: FAIL: error waiting for stream ingest preread");
+      return -1;
    }
 
-   free (ts_buf);
+   for (int threadIndex = 0; threadIndex < numIngestStreams; threadIndex++)
+   {             
+      // GORP: free the contents of these lists
+      vqarray_free (ebpPreReadStreamIngestThreadParamsOut[threadIndex]->unfinishedPIDs);
+      vqarray_free (ebpPreReadStreamIngestThreadParamsOut[threadIndex]->ebpStructs);
+
+      free (ebpPreReadStreamIngestThreadParamsOut[threadIndex]);
+   }
+   free (ebpPreReadStreamIngestThreadParamsOut);
+
+   pthread_attr_destroy (&threadAttr);
+
    LOG_INFO ("Main:prereadIngestStreams: exiting");
    return 0;
 }
@@ -1099,7 +1114,7 @@ int setupQueues(int numIngests, program_stream_info_t *programStreamInfo,
 
          streamInfo->ebpBoundaryInfo = setupDefaultBoundaryInfoArray();
          returnCode = modBoundaryInfoArray (programStreamInfo[fileIndex].ebpDescriptors[streamIndex], 
-            programStreamInfo[fileIndex].ebps[streamIndex],
+            programStreamInfo[fileIndex].ebps[streamIndex], programStreamInfo[fileIndex].ebpLists[streamIndex],
             streamInfo->ebpBoundaryInfo, fileIndex, streamIndex, programStreamInfo, numIngests,
             videoStreamInfo);
          if (returnCode != 0)
@@ -1284,6 +1299,87 @@ int startThreads_FileIngest(int numFiles, int totalNumStreams, ebp_stream_info_t
    LOG_INFO("Main:startThreads_FileIngest: exiting");
    return 0;
 }
+  
+int startThreads_PreReadStreamIngest(int numIngestStreams, program_stream_info_t *programStreamInfo,
+   circular_buffer_t **ingestBuffers, pthread_t ***preReadStreamIngestThreads, pthread_attr_t *threadAttr,
+   ebp_preread_stream_ingest_thread_params_t ***ebpPreReadStreamIngestThreadParamsOut)
+{
+   LOG_INFO ("Main:startThreads_PreReadStreamIngest: entering");
+
+   int returnCode = 0;
+
+   // one worker thread per ingest
+   // num worker thread = numIngestStreams
+
+   pthread_attr_init(threadAttr);
+   pthread_attr_setdetachstate(threadAttr, PTHREAD_CREATE_JOINABLE);
+
+   // start the stream ingest threads
+   *preReadStreamIngestThreads = (pthread_t **) calloc (numIngestStreams, sizeof(pthread_t*));
+   *ebpPreReadStreamIngestThreadParamsOut = (ebp_preread_stream_ingest_thread_params_t **) calloc (numIngestStreams, 
+      sizeof (ebp_preread_stream_ingest_thread_params_t *));
+   for (int threadIndex = 0; threadIndex < numIngestStreams; threadIndex++)
+   {             
+      ebp_preread_stream_ingest_thread_params_t *ebpPreReadStreamIngestThreadParams = (ebp_preread_stream_ingest_thread_params_t *)calloc (1, sizeof(ebp_preread_stream_ingest_thread_params_t));
+      ebpPreReadStreamIngestThreadParams->threadNum = threadIndex;  // same as file index
+      ebpPreReadStreamIngestThreadParams->cb = ingestBuffers[threadIndex];
+      ebpPreReadStreamIngestThreadParams->programStreamInfo = &(programStreamInfo[threadIndex]);
+
+      (*ebpPreReadStreamIngestThreadParamsOut)[threadIndex] = ebpPreReadStreamIngestThreadParams;
+
+      (*preReadStreamIngestThreads)[threadIndex] = (pthread_t *)calloc (1, sizeof (pthread_t));
+      pthread_t *streamPreReadIngestThread = (*preReadStreamIngestThreads)[threadIndex];
+      LOG_INFO_ARGS("Main:startThreads_PreReadStreamIngest: creating streamIngest thread %d", threadIndex);
+      returnCode = pthread_create(streamPreReadIngestThread, threadAttr, EBPPreReadStreamIngestThreadProc, 
+         (void *)ebpPreReadStreamIngestThreadParams);
+      if (returnCode)
+      {
+         LOG_ERROR_ARGS("Main:startThreads_PreReadStreamIngest: FAIL: error %d creating PreReadStreamIngest thread %d", 
+            returnCode, threadIndex);
+         reportAddErrorLogArgs("Main:startThreads_PreReadStreamIngest: FAIL: error %d creating PreReadStreamIngest thread %d", 
+            returnCode, threadIndex);
+          return -1;
+      }
+  }
+
+   LOG_INFO("Main:startThreads_PreReadStreamIngest: exiting");
+   return 0;
+}
+
+int waitForPreReadStreamIngestToExit(int numIngestStreams,
+   pthread_t **preReadStreamIngestThreads, pthread_attr_t *threadAttr)
+{
+   LOG_INFO("Main:waitForPreReadStreamIngestToExit: entering");
+   void *status;
+   int returnCode = 0;
+
+   for (int threadIndex = 0; threadIndex < numIngestStreams; threadIndex++)
+   {
+      LOG_INFO_ARGS("Main:waitForPreReadStreamIngestToExit: waiting for join on socket thread %d", threadIndex);
+      printf("Main:waitForPreReadStreamIngestToExit: waiting for join on socket thread %d\n", threadIndex);
+
+      returnCode = pthread_join(*(preReadStreamIngestThreads[threadIndex]), &status);
+      if (returnCode) 
+      {
+         LOG_ERROR_ARGS ("Main:waitForPreReadStreamIngestToExit: error %d from pthread_join() for socket receive thread %d",
+            returnCode, threadIndex);
+         reportAddErrorLogArgs ("Main:waitForPreReadStreamIngestToExit: error %d from pthread_join() for socket receive thread %d",
+            returnCode, threadIndex);
+         returnCode = -1;
+      }
+
+      LOG_INFO_ARGS("Main:waitForPreReadStreamIngestToExit: completed join with socket receive thread %d: status = %ld", 
+         threadIndex, (long)status);
+      printf("Main:waitForPreReadStreamIngestToExit: completed join with socket receive thread %d: status = %ld\n", 
+         threadIndex, (long)status);
+   }
+        
+   LOG_INFO ("Main:waitForPreReadStreamIngestToExit: complete");
+   printf ("Main:waitForPreReadStreamIngestToExit: complete\n");
+
+   return returnCode;
+}
+
   
 int startThreads_StreamIngest(int numIngestStreams, int totalNumStreams, ebp_stream_info_t **streamInfoArray, 
    circular_buffer_t **ingestBuffers,
@@ -1849,7 +1945,7 @@ void runStreamIngestMode(int numIngestStreams, char **ingestAddrs, int peekFlag,
       exit (-1);
    }
 
-   freeProgramStreamInfo (programStreamInfo);
+   freeProgramStreamInfo (programStreamInfo, numIngestStreams);
    free (ingestPassFails);
 
    // free circular buffers here
@@ -1933,7 +2029,7 @@ void runFileIngestMode(int numFiles, char **filePaths, int peekFlag)
       exit (-1);
    }
 
-   freeProgramStreamInfo (programStreamInfo);
+   freeProgramStreamInfo (programStreamInfo, numFiles);
    free (filePassFails);
 
    LOG_INFO ("runFileIngestMode: exiting");
@@ -1965,217 +2061,46 @@ ebp_boundary_info_t *setupDefaultBoundaryInfoArray()
    return boundaryInfoArray;
 }
 
-void aphabetizeStringArray(char **stringArray, int stringArraySz)
+void freeProgramStreamInfo(program_stream_info_t *programStreamInfoArray, int numIngests)
 {
-   // bubble sort
-   if (stringArraySz <= 1)
+   for (int ingestIndex = 0; ingestIndex<numIngests; ingestIndex++)
    {
-      return;
-   }
+      program_stream_info_t *programStreamInfo = &(programStreamInfoArray[ingestIndex]);
 
-   int done = 0;
-   while (!done)
-   {
-      done = 1;
-      for (int i=1; i<stringArraySz; i++)
+      for (int i=0; i<programStreamInfo->numStreams; i++)
       {
-         if (strcmp(stringArray[i-1], stringArray[i]) > 0)
+         if ((programStreamInfo->language)[i] != NULL)
          {
-            char *temp = stringArray[i-1];
-            stringArray[i-1] = stringArray[i];
-            stringArray[i] = temp;
+            free ((programStreamInfo->language)[i]);
+         }
+         if ((programStreamInfo->ebps)[i] != NULL)
+         {
+            ebp_free ((programStreamInfo->ebps)[i]);
+         }
+         if ((programStreamInfo->ebpDescriptors)[i] != NULL)
+         {
+            ebp_descriptor_free ((descriptor_t *)((programStreamInfo->ebpDescriptors)[i]));
+         }
+         if ((programStreamInfo->ebpLists)[i] != NULL)
+         {
+            for (int j=0; j<varray_length((programStreamInfo->ebpLists)[i]); j++)
+            {
+               ebp_free ((ebp_t*) varray_get((programStreamInfo->ebpLists)[i], j));
+            }
 
-            done = 0;
+            varray_free((programStreamInfo->ebpLists)[i]);
          }
       }
-   }
-}
 
-void aphabetizeLanguageDescriptorLanguages (language_descriptor_t* languageDescriptor)
-{
-   // bubble sort
-   if (languageDescriptor->num_languages <= 1)
-   {
-      return;
+      free (programStreamInfo->stream_types);
+      free (programStreamInfo->PIDs);
+      free (programStreamInfo->ebpDescriptors);
+      free (programStreamInfo->ebps);
+      free (programStreamInfo->ebpLists);
+      free (programStreamInfo->language);
    }
 
-   int done = 0;
-   while (!done)
-   {
-      done = 1;
-      for (int i=1; i<languageDescriptor->num_languages; i++)
-      {
-         if (strcmp(languageDescriptor->languages[i-1].ISO_639_language_code, 
-            languageDescriptor->languages[i].ISO_639_language_code) > 0)
-         {
-            iso639_lang_t temp = languageDescriptor->languages[i-1];
-            languageDescriptor->languages[i-1] = languageDescriptor->languages[i];
-            languageDescriptor->languages[i] = temp;
-
-            done = 0;
-         }
-      }
-   }
-}
-
-void freeProgramStreamInfo(program_stream_info_t *programStreamInfo)
-{
-   for (int i=0; i<programStreamInfo->numStreams; i++)
-   {
-      free ((programStreamInfo->language)[i]);
-      ebp_free (programStreamInfo->ebps[i]);
-      ebp_descriptor_free ((descriptor_t *)((programStreamInfo->ebpDescriptors)[i]));
-   }
-
-   free (programStreamInfo->stream_types);
-   free (programStreamInfo->PIDs);
-   free (programStreamInfo->ebpDescriptors);
-   free (programStreamInfo->ebps);
-   free (programStreamInfo->language);
-
-   free (programStreamInfo);
-}
-
-void populateProgramStreamInfo(program_stream_info_t *programStreamInfo, mpeg2ts_program_t *m2p)
-{
-   pid_info_t *pi;
-//   programStreamInfo->numStreams = vqarray_length(m2p->pids);
-   programStreamInfo->numStreams = 0;
-   for (int j = 0; j < vqarray_length(m2p->pids); j++)
-   {
-      if ((pi = vqarray_get(m2p->pids, j)) != NULL)
-      {
-         if (IS_AUDIO_STREAM(pi->es_info->stream_type) || IS_VIDEO_STREAM(pi->es_info->stream_type))
-         {
-            programStreamInfo->numStreams++;
-         }
-      }
-   }
-
-
-   programStreamInfo->stream_types = (uint32_t*) calloc (programStreamInfo->numStreams, sizeof (uint32_t));
-   programStreamInfo->PIDs = (uint32_t*) calloc (programStreamInfo->numStreams, sizeof (uint32_t));
-   programStreamInfo->ebpDescriptors = (ebp_descriptor_t**) calloc (programStreamInfo->numStreams, sizeof (ebp_descriptor_t *));
-   programStreamInfo->ebps = (ebp_t**) calloc (programStreamInfo->numStreams, sizeof (ebp_t *));
-   programStreamInfo->language = (char**) calloc (programStreamInfo->numStreams, sizeof (char *));
-
-   int progStreamIndex = 0;
-
-   for (int j = 0; j < vqarray_length(m2p->pids); j++)
-   {
-      if ((pi = vqarray_get(m2p->pids, j)) != NULL)
-      {
-         if (!IS_AUDIO_STREAM(pi->es_info->stream_type) && !IS_VIDEO_STREAM(pi->es_info->stream_type))
-         {
-            continue;
-         }
-
-         LOG_INFO_ARGS ("Main:prereadFiles: stream %d: stream_type = %u, elementary_PID = %u, ES_info_length = %u",
-            progStreamIndex, pi->es_info->stream_type, pi->es_info->elementary_PID, pi->es_info->ES_info_length);
-
-         programStreamInfo->stream_types[progStreamIndex] = pi->es_info->stream_type;
-         programStreamInfo->PIDs[progStreamIndex] = pi->es_info->elementary_PID;
-
-         ebp_descriptor_t* ebpDescriptor = getEBPDescriptor (pi->es_info);
-         if (ATS_TEST_CASE_AUDIO_IMPLICIT_TRIGGER &&
-            pi->es_info->elementary_PID == 482)
-         {
-            ebpDescriptor = NULL;
-         }
-         else if (ATS_TEST_CASE_AUDIO_XFILE_IMPLICIT_TRIGGER != 0 && pi->es_info->elementary_PID == 482)
-         {
-            ebp_partition_data_t* partition = get_partition (ebpDescriptor, EBP_PARTITION_FRAGMENT);
-            partition->ebp_data_explicit_flag = 0;
-            partition->ebp_pid = 481;
-            partition = get_partition (ebpDescriptor, EBP_PARTITION_SEGMENT);
-            partition->ebp_data_explicit_flag = 0;
-            partition->ebp_pid = 481;
-         }
-
-         if (ebpDescriptor != NULL)
-         {
-            ebp_descriptor_print_stdout (ebpDescriptor);
-            programStreamInfo->ebpDescriptors[progStreamIndex] = ebp_descriptor_copy(ebpDescriptor);
-         }
-         else
-         {
-            LOG_INFO ("NULL ebp_descriptor");
-         }
-
-         language_descriptor_t* languageDescriptor = getLanguageDescriptor (pi->es_info);
-         component_name_descriptor_t* componentNameDescriptor = getComponentNameDescriptor (pi->es_info);
-         ac3_descriptor_t* ac3Descriptor = getAC3Descriptor (pi->es_info);
-         int languageStringSz = 3; // commas + NULL terminator
-
-         if (languageDescriptor != NULL)
-         {
-            for (int ii=0; ii<languageDescriptor->num_languages; ii++)
-            {
-               languageStringSz += 4; // 3 chars plus a : to separate languages
-            }
-         }
-         if (componentNameDescriptor != NULL && componentNameDescriptor->num_names)
-         {
-//            void sortStringArray(componentNameDescriptor->names, componentNameDescriptor->numNames);
-            for (int ii=0; ii<componentNameDescriptor->num_names; ii++)
-            {
-               languageStringSz += strlen(componentNameDescriptor->names[ii]) + 1;  // strlen plus a : to separate names
-            }
-         }
-         if (ac3Descriptor != NULL)
-         {
-            languageStringSz += 3;
-         }
-            
-         programStreamInfo->language[progStreamIndex] = (char *)calloc (languageStringSz, 1);
-
-         if (languageDescriptor != NULL)
-         {
-            // alphabetize multiple language strings in case they are in a different
-            // order in different streams
-            aphabetizeLanguageDescriptorLanguages (languageDescriptor);
-            for (int ii=0; ii<languageDescriptor->num_languages; ii++)
-            {
-               strcat (programStreamInfo->language[progStreamIndex], languageDescriptor->languages[ii].ISO_639_language_code);
-               strcat (programStreamInfo->language[progStreamIndex], ":");
-            }
-
-            LOG_INFO_ARGS ("Num Languages = %d, Language = %s", languageDescriptor->num_languages, programStreamInfo->language[progStreamIndex]);
-         }
-         strcat (programStreamInfo->language[progStreamIndex], ",");
-
-         if (componentNameDescriptor != NULL && componentNameDescriptor->num_names)
-         {
-            aphabetizeStringArray(componentNameDescriptor->names, componentNameDescriptor->num_names);
-            for (int ii=0; ii<componentNameDescriptor->num_names; ii++)
-            {
-               strcat (programStreamInfo->language[progStreamIndex], componentNameDescriptor->names[ii]);               
-               strcat (programStreamInfo->language[progStreamIndex], ":");
-            }
-         }
-         else
-         {
-            if (ATS_TEST_CASE_AUDIO_UNIQUE_LANG)
-            {
-               // testing: tests discrimination by language by making a unique language per stream
-               char temp[10];
-               sprintf (temp, "%d", pi->es_info->elementary_PID);
-               strcat (programStreamInfo->language[progStreamIndex], temp);  
-            }
-         }
-         
-         strcat (programStreamInfo->language[progStreamIndex], ",");
-
-         if (ac3Descriptor != NULL)
-         {
-            strcat (programStreamInfo->language[progStreamIndex], ac3Descriptor->language);               
-         }
-               
-         LOG_INFO_ARGS ("Language = %s", programStreamInfo->language[progStreamIndex]);
-      
-         progStreamIndex++;
-      }
-   }
+   free (programStreamInfoArray);
 }
 
 void printIngestStatus (ebp_socket_receive_thread_params_t **ebpSocketReceiveThreadParams, int numIngestStreams, int numStreams,

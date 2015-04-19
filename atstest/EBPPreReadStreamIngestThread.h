@@ -25,33 +25,36 @@ ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
+#ifndef __H_EBP_PREREAD_STREAM_INGEST_THREAD
+#define __H_EBP_PREREAD_STREAM_INGEST_THREAD
 
-#ifndef __H_ATS_TEST_APP_CONFIG
-#define __H_ATS_TEST_APP_CONFIG
+#include "ThreadSafeFIFO.h"
+#include <tpes.h>
+#include "EBPIngestThreadCommon.h"
+#include "EBPStreamBuffer.h"
 
 typedef struct 
 {
-   int logLevel;
-   char *logFilePath;
-   unsigned int ebpPrereadSearchTimeMsecs;
-   float ebpAllowedPTSJitterSecs;
-   float ebpSCTE35PTSJitterSecs;
+    circular_buffer_t *cb;
+    int threadNum;
 
-   int socketRcvBufferSz;
-   int ingestCircularBufferSz;
+    program_stream_info_t *programStreamInfo;
 
-} ats_test_app_config_t;
+    int bPATFound;
+    int bPMTFound;
+    int bEBPSearchEnded;
+    int64_t streamStartTimeMsecs;
+    vqarray_t *unfinishedPIDs;
+    vqarray_t *ebpStructs;
 
-
-extern ats_test_app_config_t g_ATSTestAppConfig;
-
-int readTestConfigFile();
-void printTestConfig();
-void setTestConfigDefaults();
-int initTestConfig();
-
-char *trimWhitespace(char *string);
+} ebp_preread_stream_ingest_thread_params_t;
 
 
+void *EBPPreReadStreamIngestThreadProc(void *threadParams);
+void populateProgramStreamInfo(program_stream_info_t *programStreamInfo, mpeg2ts_program_t *m2p);
+void alphabetizeLanguageDescriptorLanguages (language_descriptor_t* languageDescriptor);
+void alphabetizeStringArray(char **stringArray, int stringArraySz);
 
-#endif // __H_ATS_TEST_APP_CONFIG
+
+
+#endif  // __H_EBP_PREREAD_STREAM_INGEST_THREAD

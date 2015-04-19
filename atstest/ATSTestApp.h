@@ -30,6 +30,8 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define __H_ATSTESTAPP_767JKS
 
 #include "EBPStreamBuffer.h"
+#include "EBPPreReadStreamIngestThread.h"
+
 
 //#define PREREAD_EBP_SEARCH_TIME_MSECS   10000
 //#define PREREAD_EBP_SEARCH_TIME_MSECS   10000000
@@ -37,14 +39,15 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ebp_boundary_info_t *setupDefaultBoundaryInfoArray();
 void printBoundaryInfoArray(ebp_boundary_info_t *boundaryInfoArray);
-int modBoundaryInfoArray (ebp_descriptor_t *ebpDescriptor, ebp_t *ebp, ebp_boundary_info_t *boundaryInfoArray,
+int modBoundaryInfoArray (ebp_descriptor_t *ebpDescriptor, ebp_t *ebp, varray_t* ebpList, 
+   ebp_boundary_info_t *boundaryInfoArray,
    int currentFileIndex, int currentStreamIndex, program_stream_info_t *programStreamInfo, int numFiles,
    ebp_stream_info_t *videoStreamInfo);
 void populateProgramStreamInfo(program_stream_info_t *programStreamInfo, mpeg2ts_program_t *m2p);
 
 void printStreamInfo(int numIngests, int numStreams, ebp_stream_info_t **streamInfoArray, char **ingestNames,
                      program_stream_info_t *programStreamInfo);
-void freeProgramStreamInfo (program_stream_info_t *programStreamInfo);
+void freeProgramStreamInfo (program_stream_info_t *programStreamInfoArray, int numIngests);
 
 int prereadFiles(int numFiles, char **fileNames, program_stream_info_t *programStreamInfo);
 int prereadIngestStreams(int numIngestStreams, circular_buffer_t **ingestBuffers, program_stream_info_t *programStreamInfo);
@@ -63,6 +66,12 @@ void runFileIngestMode(int numFiles, char **filePaths, int peekFlag);
 void runStreamIngestMode(int numngestStreams, char **ingestAddrs, int peekFlag, int enableStreamDump);
 
 int parseMulticastAddrArg (char *inputArg, unsigned long *pIP, unsigned long *psrcIP, unsigned short *pPort);
+
+int startThreads_PreReadStreamIngest(int numIngestStreams, program_stream_info_t *programStreamInfo,
+   circular_buffer_t **ingestBuffers, pthread_t ***preReadStreamIngestThreads, pthread_attr_t *threadAttr,
+   ebp_preread_stream_ingest_thread_params_t ***ebpPreReadStreamIngestThreadParamsOut);
+int waitForPreReadStreamIngestToExit(int numIngestStreams,
+   pthread_t **preReadStreamIngestThreads, pthread_attr_t *threadAttr);
 
 int startThreads_FileIngest(int numFiles, int totalNumStreams, ebp_stream_info_t **streamInfoArray, char **fileNames,
    int *filePassFails, pthread_t ***fileIngestThreads, pthread_t ***analysisThreads, pthread_attr_t *threadAttr);
