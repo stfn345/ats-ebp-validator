@@ -243,8 +243,8 @@ int modBoundaryInfoArray (ebp_descriptor_t * ebpDescriptor, ebp_t *ebp, varray_t
       }
       if (ebp->ebp_ext_partition_flag)
       {
-         // GORP: different boundaries could be signalled in different EBPs -- all boundaries may
-         // not be in one EBP!!
+         // different boundaries could be signalled in different EBPs -- all boundaries may
+         // not be in one EBP -- be sure to preserve order of EBPs and partitions
          uint8_t ebp_ext_partitions_temp = ebp->ebp_ext_partitions;
          ebp_ext_partitions_temp = ebp_ext_partitions_temp >> 1; // skip partition1d 0
 
@@ -383,11 +383,9 @@ static int handle_pes_packet(pes_packet_t *pes, elementary_stream_info_t *esi, v
    }
    else
    {
-      
-//      if ((currentTimeMsecs - g_streamStartTimeMsecs) > PREREAD_EBP_SEARCH_TIME_MSECS)
       if ((currentTimeMsecs - g_streamStartTimeMsecs) > g_ATSTestAppConfig.ebpPrereadSearchTimeMsecs)
       {
-         LOG_INFO ("EBP search timed out\n");
+         LOG_INFO ("EBP search complete\n");
          g_bEBPSearchEnded = 1;
       }
    }
@@ -407,25 +405,7 @@ static int handle_pes_packet(pes_packet_t *pes, elementary_stream_info_t *esi, v
    }
 
    if (ebp != NULL)
-   {         
-      int index = -1;
-      for (int i=0; i<vqarray_length(g_unfinishedPIDs); i++)
-      {
-         uint32_t PIDTemp = (uint32_t) vqarray_get(g_unfinishedPIDs, i);
-
-         if (PIDTemp == esi->elementary_PID)
-         {
-            index = i;
-            break;
-         }
-      }
-
-      if (index >= 0)
-      {
-         LOG_INFO_ARGS ("PID %d EBP detection complete", esi->elementary_PID);
-         vqarray_remove(g_unfinishedPIDs, index);
-      }
-
+   {     
       // store EBP struct in programStreamInfo (by PID) -- this is used for later EBP boundary analysis
       program_stream_info_t *programStreamInfo = (program_stream_info_t *)arg;
       for (int i=0; i<programStreamInfo->numStreams; i++)
@@ -445,7 +425,7 @@ static int handle_pes_packet(pes_packet_t *pes, elementary_stream_info_t *esi, v
 
      if (vqarray_length(g_unfinishedPIDs) == 0)
       {
-         LOG_INFO ("EBP detection complete");
+         LOG_INFO ("EBP detection complete -- all PIDS have EBP descriptors");
          g_bEBPSearchEnded = 1;
       }
 
@@ -713,8 +693,16 @@ int prereadIngestStreams(int numIngestStreams, circular_buffer_t **ingestBuffers
 
    for (int threadIndex = 0; threadIndex < numIngestStreams; threadIndex++)
    {             
-      // GORP: free the contents of these lists
+      for (int i=0; i<vqarray_length(ebpPreReadStreamIngestThreadParamsOut[threadIndex]->unfinishedPIDs); i++)
+      {
+         free (vqarray_get (ebpPreReadStreamIngestThreadParamsOut[threadIndex]->unfinishedPIDs, i));
+      }
       vqarray_free (ebpPreReadStreamIngestThreadParamsOut[threadIndex]->unfinishedPIDs);
+
+      for (int i=0; i<vqarray_length(ebpPreReadStreamIngestThreadParamsOut[threadIndex]->ebpStructs); i++)
+      {
+         free (vqarray_get (ebpPreReadStreamIngestThreadParamsOut[threadIndex]->ebpStructs, i));
+      }
       vqarray_free (ebpPreReadStreamIngestThreadParamsOut[threadIndex]->ebpStructs);
 
       free (ebpPreReadStreamIngestThreadParamsOut[threadIndex]);

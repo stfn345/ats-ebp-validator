@@ -1164,9 +1164,9 @@ void addSCTE35Point (varray_t* scte35List, uint64_t PTS, int threadNum, int part
       if (PTS < *PTSTemp)
       {
          // insert into SCTEList
-         // GORP: free thee later
+         // GORP: free these later
          uint64_t *PTSCopy = (uint64_t *) malloc (sizeof (uint64_t));
-        *PTSCopy = PTS;
+         *PTSCopy = PTS;
          varray_insert(scte35List, i, PTSCopy);
 
          insertComplete = 1;

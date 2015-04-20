@@ -183,7 +183,7 @@ static int preread_handle_pes_packet(pes_packet_t *pes, elementary_stream_info_t
       
       if ((currentTimeMsecs - ebpPreReadStreamIngestThreadParams->streamStartTimeMsecs) > g_ATSTestAppConfig.ebpPrereadSearchTimeMsecs)
       {
-         LOG_INFO ("EBP search timed out\n");
+         LOG_INFO ("EBP search complete\n");
          ebpPreReadStreamIngestThreadParams->bEBPSearchEnded = 1;
       }
    }
@@ -221,16 +221,14 @@ static int preread_handle_pes_packet(pes_packet_t *pes, elementary_stream_info_t
          }
       }
      
-      if (vqarray_length(ebpPreReadStreamIngestThreadParams->unfinishedPIDs) == 0)
-      {
-         LOG_INFO ("EBP detection complete");
-         ebpPreReadStreamIngestThreadParams->bEBPSearchEnded = 1;
-      }
-
       ebp_free(ebp);
    }
    
-
+   if (vqarray_length(ebpPreReadStreamIngestThreadParams->unfinishedPIDs) == 0)
+   {
+      LOG_INFO ("EBP detection complete -- all PIDS have EBP descriptors");
+      ebpPreReadStreamIngestThreadParams->bEBPSearchEnded = 1;
+   }
 
    pes_free(pes);
    return 1;
