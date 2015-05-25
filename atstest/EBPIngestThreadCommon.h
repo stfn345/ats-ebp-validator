@@ -30,6 +30,8 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "ThreadSafeFIFO.h"
 #include <tpes.h>
+#include <hashtable.h>
+#include "scte35.h"
 
 typedef struct 
 {
@@ -40,6 +42,9 @@ typedef struct
     ebp_stream_info_t **allStreamInfos;
 
     int *ingestPassFail;
+
+    uint64_t currentVideoPTS;
+    hashtable_t *mapOldSCTE35SpliceInserts;  //hash map mapping eventIDs to latest PTS
 
     psi_table_buffer_t scte35TableBuffer;  // used for SCTE35 tabels that span mult TS packets
 
@@ -60,7 +65,8 @@ ac3_descriptor_t* getAC3Descriptor (elementary_stream_info_t *esi);
 void findFIFO (uint32_t PID, ebp_stream_info_t **streamInfos, int numStreams,
    thread_safe_fifo_t**fifoOut, int *fifoIndex);
 ebp_t* getEBP(ts_packet_t *ts, ebp_stream_info_t * streamInfo, int threadNum);
-int detectBoundary(int threadNum, ebp_t* ebp, ebp_stream_info_t *streamInfo, uint64_t PTS, int *isBoundary);
+int detectBoundary(int threadNum, ebp_t* ebp, ebp_stream_info_t *streamInfo, uint64_t PTS, int *isBoundary,
+                   hashtable_t *mapOldSCTE35SpliceInserts);
 void triggerImplicitBoundaries (int threadNum, ebp_stream_info_t **streamInfoArray, int numStreams, int numFiles,
    int currentStreamInfoIndex, uint64_t PTS, uint8_t partitionId, int fileIndex);
 
@@ -71,14 +77,18 @@ uint32_t getSAPType_MPEG4_AAC(pes_packet_t *pes, ts_packet_t *first_ts);
 uint32_t getSAPType_AC3(pes_packet_t *pes, ts_packet_t *first_ts);
 uint32_t getSAPType_MPEG2_VIDEO(pes_packet_t *pes, ts_packet_t *first_ts);
 
-void addSCTE35Point_AllBoundaries (int threadNum, ebp_stream_info_t *streamInfo, uint64_t PTS);
-void checkPTSAgainstSCTE35Points_AllBoundaries (int threadNum, ebp_stream_info_t *streamInfo, uint64_t PTS);
+void addSCTE35Point_AllBoundaries (int threadNum, ebp_stream_info_t *streamInfo, scte35_splice_info_section *scte35InfoSection);
+void checkPTSAgainstSCTE35Points_AllBoundaries (int threadNum, ebp_stream_info_t *streamInfo, uint64_t PTS,
+                                                hashtable_t *mapOldSCTE35SpliceInserts);
+uint64_t getSCTE35PTS (scte35_splice_info_section *scte35InfoSection, uint32_t PID);
 
-void addSCTE35Point (varray_t* scte35List, uint64_t PTS, int threadNum, int partitionID, uint32_t PID);
+void addSCTE35Point (varray_t* scte35List, scte35_splice_info_section *scte35InfoSection, int threadNum, int partitionID, uint32_t PID);
 int checkPTSAgainstSCTE35Points (varray_t* scte35List, uint64_t PTS, uint64_t deltaSCTE35PTS, int threadNum,
-                                  int partitionID, uint32_t PID);
+                                  int partitionID, uint32_t PID, hashtable_t *mapOldSCTE35SpliceInserts);
 int checkEBPAgainstSCTE35Points (varray_t* scte35List, uint64_t PTS, uint64_t deltaSCTE35PTS, int threadNum,
-                                  int partitionID, uint32_t PID);
+                                  int partitionID, uint32_t PID, hashtable_t *mapOldSCTE35SpliceInserts);
+void pruneOldSCTE35Map(hashtable_t *mapOldSCTE35SpliceInserts, uint64_t currentPTS);
+
 
 
 #endif  // __H_EBP_INGEST_THREAD_COMMON_

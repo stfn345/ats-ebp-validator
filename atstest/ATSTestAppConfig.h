@@ -37,6 +37,9 @@ typedef struct
    float ebpAllowedPTSJitterSecs;
    float ebpSCTE35PTSJitterSecs;
 
+   float scte35MinimumPrerollSeconds;
+   float scte35SpliceEventTimeToLiveSecs;
+
    int socketRcvBufferSz;
    int ingestCircularBufferSz;
 

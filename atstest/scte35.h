@@ -35,6 +35,14 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <psi.h>
 
 
+#define SCTE35_NULL_CMD                       0x00
+#define SCTE35_SPLICE_SCHEDULE_CMD            0x04
+#define SCTE35_SPLICE_INSERT_CMD              0x05
+#define SCTE35_TIME_SIGNAL_CMD                0x06
+#define SCTE35_BANDWIDTH_RESERVATION_CMD      0x07
+#define SCTE35_PRIVATE_COMMAND_CMD            0xFF
+
+
 typedef struct 
 {
    uint8_t time_specified_flag;
@@ -160,6 +168,7 @@ int scte35_splice_info_section_read(scte35_splice_info_section *sis, uint8_t *bu
 void scte35_splice_info_section_print_stdout(const scte35_splice_info_section *sis); 
 
 uint64_t get_splice_insert_PTS (scte35_splice_info_section *sis);
+uint32_t get_splice_insert_eventID (scte35_splice_info_section *sis);
 scte35_splice_insert* get_splice_insert (scte35_splice_info_section *sis);
 int is_splice_insert (scte35_splice_info_section *sis);
 
@@ -174,6 +183,7 @@ void scte35_parse_bandwidth_reservation(bs_t *b);
 scte35_private_command* scte35_parse_private_command(bs_t *b, uint16_t command_sz);
 scte35_splice_event* scte35_parse_splice_event(bs_t *b);
 
+uint64_t scte35_get_latest_PTS (scte35_splice_info_section *sis);
 
 void scte35_free_splice_null();
 void scte35_free_splice_schedule(scte35_splice_schedule *splice_schedule);

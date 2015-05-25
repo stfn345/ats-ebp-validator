@@ -276,6 +276,32 @@ void hashtable_foreach_pair(hashtable_t *h, void (*func) (void*, void *, void*),
     }      
 }
 
+void hashtable_get_key_array(hashtable_t *h, void*** keyArray, int *keyArraySz)
+{
+    unsigned int i;
+    struct entry *e, *f;
+    struct entry **table = h->table;
+
+    // first count how many entries are present
+    int cntr = hashtable_count(h);
+
+    // next allocate spave for key array:
+    *keyArray = (void **) calloc(cntr, sizeof (void *));
+    *keyArraySz = cntr;
+    int key_array_index = 0;
+
+    for ( i = 0; i < h->tablelength; i++ )
+    {
+        e = table[i];
+        while ( NULL != e )
+        {
+            f = e; 
+            e = e->next; 
+            (*keyArray)[key_array_index++] = f->k;
+        }
+    }      
+}
+
 /*****************************************************************************/
 /* destroy */
 void hashtable_free(hashtable_t *h, int free_values)

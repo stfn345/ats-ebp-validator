@@ -18,6 +18,10 @@ ebpAllowedPTSJitterSecs = 0.5
 // and actual EBP location
 ebpSCTE35PTSJitterSecs = 0.5
 
+scte35MinimumPrerollSeconds = 10.0
+scte35SpliceEventTimeToLiveSecs = 10.0
+
+
 // for multicast case, size of UDP receive buffer
 socketRcvBufferSz = 2000000
 

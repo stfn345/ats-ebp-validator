@@ -34,6 +34,8 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <scte35.h>
 #include <pthread.h>
 #include <getopt.h>
+#include <hashtable.h>
+#include <hashtable_str.h>
 
 #include "EBPCommon.h"
 #include "EBPFileIngestThread.h"
@@ -1268,6 +1270,8 @@ int startThreads_FileIngest(int numFiles, int totalNumStreams, ebp_stream_info_t
       ebpFileIngestThreadParams->ebpIngestThreadParams->allStreamInfos = streamInfoArray;
       ebpFileIngestThreadParams->filePath = fileNames[threadIndex];
       ebpFileIngestThreadParams->ebpIngestThreadParams->ingestPassFail = &(filePassFails[threadIndex]);
+      ebpFileIngestThreadParams->ebpIngestThreadParams->mapOldSCTE35SpliceInserts = 
+             hashtable_new(hashtable_hashfn_uint32, hashtable_eqfn_uint32);
 
 
       (*fileIngestThreads)[threadIndex] = (pthread_t *)calloc (1, sizeof (pthread_t));
@@ -1437,6 +1441,9 @@ int startThreads_StreamIngest(int numIngestStreams, int totalNumStreams, ebp_str
       ebpStreamIngestThreadParams->ebpIngestThreadParams->allStreamInfos = streamInfoArray;
       ebpStreamIngestThreadParams->cb = ingestBuffers[threadIndex];
       ebpStreamIngestThreadParams->ebpIngestThreadParams->ingestPassFail = &(filePassFails[threadIndex]);
+      ebpStreamIngestThreadParams->ebpIngestThreadParams->mapOldSCTE35SpliceInserts = 
+             hashtable_new(hashtable_hashfn_uint32, hashtable_eqfn_uint32);
+
 
       (*ebpStreamIngestThreadParamsOut)[threadIndex] = ebpStreamIngestThreadParams;
 
@@ -1720,7 +1727,7 @@ int main(int argc, char** argv)
    {
       LOG_INFO ("ERROR opening log file");
    }
-   
+  
    if (fileFlag && streamFlag)
    {
       LOG_INFO ("Main: File (-f) and Stream (-s) cannot be specified simultaneously");

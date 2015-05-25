@@ -200,6 +200,10 @@ void hashtable_foreach(hashtable_t *h, void (*func) (void*, void *), void *arg )
 
 void hashtable_foreach_pair(hashtable_t *h, void (*func) (void*, void *, void*), void *arg );
 
+
+void hashtable_get_key_array(hashtable_t *h, void*** keyArray, int *keyArraySz);
+
+
 /*****************************************************************************
  * hashtable_free
    

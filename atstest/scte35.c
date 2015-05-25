@@ -46,27 +46,27 @@ void scte35_splice_info_section_free(scte35_splice_info_section *sis)
 
    if (sis->splice_command != NULL)
    {
-      if(sis->splice_command_type == 0x00)
+      if(sis->splice_command_type == SCTE35_NULL_CMD)
       {
          scte35_free_splice_null();
       }
-      else if(sis->splice_command_type == 0x04)
+      else if(sis->splice_command_type == SCTE35_SPLICE_SCHEDULE_CMD)
       {
          scte35_free_splice_schedule((scte35_splice_schedule *)sis->splice_command);
       }
-      else if(sis->splice_command_type == 0x05)
+      else if(sis->splice_command_type == SCTE35_SPLICE_INSERT_CMD)
       {
          scte35_free_splice_insert((scte35_splice_insert *)sis->splice_command);
       }
-      else if(sis->splice_command_type == 0x06)
+      else if(sis->splice_command_type == SCTE35_TIME_SIGNAL_CMD)
       {
          scte35_free_time_signal((scte35_time_signal *)sis->splice_command);
       }
-      else if(sis->splice_command_type == 0x07)
+      else if(sis->splice_command_type == SCTE35_BANDWIDTH_RESERVATION_CMD)
       {
          scte35_free_bandwidth_reservation();
       }
-      else if(sis->splice_command_type == 0xff)
+      else if(sis->splice_command_type == SCTE35_PRIVATE_COMMAND_CMD)
       {
          scte35_free_private_command((scte35_private_command *)sis->splice_command);
       }
@@ -93,7 +93,7 @@ int is_splice_insert (scte35_splice_info_section *sis)
 
 uint64_t get_splice_insert_PTS (scte35_splice_info_section *sis)
 {
-   if (sis->splice_command_type == 0x05)
+   if (sis->splice_command_type == SCTE35_SPLICE_INSERT_CMD)
    {
       if (((scte35_splice_insert *)sis->splice_command)->splice_time != NULL)
       {
@@ -108,9 +108,20 @@ uint64_t get_splice_insert_PTS (scte35_splice_info_section *sis)
 }
 
 
+uint32_t get_splice_insert_eventID (scte35_splice_info_section *sis)
+{
+   if (sis->splice_command_type == SCTE35_SPLICE_INSERT_CMD)
+   {
+      return ((scte35_splice_insert *)sis->splice_command)->splice_event_id;
+   }
+
+   return 0;
+}
+
+
 scte35_splice_insert * get_splice_insert (scte35_splice_info_section *sis)
 {
-   if (sis->splice_command_type == 0x05)
+   if (sis->splice_command_type == SCTE35_SPLICE_INSERT_CMD)
    {
       return (scte35_splice_insert *)(sis->splice_command);
    }
@@ -120,12 +131,12 @@ scte35_splice_insert * get_splice_insert (scte35_splice_info_section *sis)
 
 int is_time_signal (scte35_splice_info_section *sis)
 {
-   return (sis->splice_command_type == 0x06);
+   return (sis->splice_command_type == SCTE35_TIME_SIGNAL_CMD);
 }
 
 scte35_time_signal * get_time_signal (scte35_splice_info_section *sis)
 {
-   if (sis->splice_command_type == 0x06)
+   if (sis->splice_command_type == SCTE35_TIME_SIGNAL_CMD)
    {
       return (scte35_time_signal *)(sis->splice_command);
    }
@@ -227,27 +238,27 @@ int scte35_splice_info_section_read(scte35_splice_info_section *sis, uint8_t *bu
    sis->splice_command_length = bs_read_u(b, 12);
    sis->splice_command_type = bs_read_u(b, 8);
 
-   if(sis->splice_command_type == 0x00)
+   if(sis->splice_command_type == SCTE35_NULL_CMD)
    {
       scte35_parse_splice_null(b);
    }
-   else if(sis->splice_command_type == 0x04)
+   else if(sis->splice_command_type == SCTE35_SPLICE_SCHEDULE_CMD)
    {
       sis->splice_command = scte35_parse_splice_schedule(b);
    }
-   else if(sis->splice_command_type == 0x05)
+   else if(sis->splice_command_type == SCTE35_SPLICE_INSERT_CMD)
    {
       sis->splice_command = scte35_parse_splice_insert(b);
    }
-   else if(sis->splice_command_type == 0x06)
+   else if(sis->splice_command_type == SCTE35_TIME_SIGNAL_CMD)
    {
       sis->splice_command = scte35_parse_time_signal(b);
    }
-   else if(sis->splice_command_type == 0x07)
+   else if(sis->splice_command_type == SCTE35_BANDWIDTH_RESERVATION_CMD)
    {
       scte35_parse_bandwidth_reservation(b);
    }
-   else if(sis->splice_command_type == 0xff)
+   else if(sis->splice_command_type == SCTE35_PRIVATE_COMMAND_CMD)
    {
       sis->splice_command = scte35_parse_private_command(b, sis->splice_command_length);
    }
@@ -299,27 +310,27 @@ void scte35_splice_info_section_print_stdout(const scte35_splice_info_section *s
 
    if (sis->splice_command != NULL)
    {
-      if(sis->splice_command_type == 0x00)
+      if(sis->splice_command_type == SCTE35_NULL_CMD)
       {
          scte35_splice_null_print_stdout();
       }
-      else if(sis->splice_command_type == 0x04)
+      else if(sis->splice_command_type == SCTE35_SPLICE_SCHEDULE_CMD)
       {
          scte35_splice_schedule_print_stdout((scte35_splice_schedule *) sis->splice_command);
       }
-      else if(sis->splice_command_type == 0x05)
+      else if(sis->splice_command_type == SCTE35_SPLICE_INSERT_CMD)
       {
          scte35_splice_insert_print_stdout ((scte35_splice_insert *) sis->splice_command);
       }
-      else if(sis->splice_command_type == 0x06)
+      else if(sis->splice_command_type == SCTE35_TIME_SIGNAL_CMD)
       {
          scte35_time_signal_print_stdout ((scte35_time_signal *) sis->splice_command);
       }
-      else if(sis->splice_command_type == 0x07)
+      else if(sis->splice_command_type == SCTE35_BANDWIDTH_RESERVATION_CMD)
       {
          scte35_bandwidth_reservation_print_stdout ();
       }
-      else if(sis->splice_command_type == 0xff)
+      else if(sis->splice_command_type == SCTE35_PRIVATE_COMMAND_CMD)
       {
          scte35_private_command_print_stdout ((scte35_private_command *) sis->splice_command);
       }
@@ -775,5 +786,41 @@ void scte35_free_splice_descriptor (scte35_splice_descriptor* splice_descriptor)
    }
 
    free (splice_descriptor);
+}
+
+uint64_t scte35_get_latest_PTS (scte35_splice_info_section *sis)
+{               
+   uint64_t newestPTS = 0;
+
+   scte35_splice_insert* spliceInsert = (scte35_splice_insert *)(sis->splice_command);
+
+   if (spliceInsert -> program_splice_flag)
+   {
+      uint64_t PTS = get_splice_insert_PTS (sis);
+      if (PTS > newestPTS)
+      {
+         newestPTS = PTS;
+      }
+   }
+   else
+   {
+      if (spliceInsert->components != NULL)
+      {
+         for (int i=0; i<vqarray_length(spliceInsert->components); i++)
+         {
+            scte35_splice_insert_component *component = (scte35_splice_insert_component *) vqarray_get (spliceInsert->components, i);
+            if (component->splice_time != NULL && component->splice_time->pts_time != 0)
+            {
+               uint64_t scte35PTS = component->splice_time->pts_time + sis->pts_adjustment;
+               if (scte35PTS > newestPTS)
+               {
+                  newestPTS = scte35PTS;
+               }
+            }
+         }
+      }
+   }
+     
+   return newestPTS;
 }
 

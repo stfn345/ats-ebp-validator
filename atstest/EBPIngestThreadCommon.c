@@ -60,11 +60,17 @@ static char* getStreamTypeDesc (elementary_stream_info_t *esi);
 
 static int validate_ts_packet(ts_packet_t *ts, elementary_stream_info_t *es_info, void *arg)
 {
+
    if (IS_SCTE35_STREAM(es_info->stream_type))
    {
       // GORP: handle tables split across mult packets
 
       ebp_ingest_thread_params_t *ebpIngestThreadParams = (ebp_ingest_thread_params_t *)arg;
+      
+      // need last PTS here to evaluate if this SCTE has come in too close to PTS
+      uint64_t currentPTS = ebpIngestThreadParams->currentVideoPTS;
+
+      pruneOldSCTE35Map(ebpIngestThreadParams->mapOldSCTE35SpliceInserts, currentPTS);
 
       LOG_INFO_ARGS ("SCTE35 table detected for thread %d", ebpIngestThreadParams->threadNum);
 
@@ -90,6 +96,25 @@ static int validate_ts_packet(ts_packet_t *ts, elementary_stream_info_t *es_info
       if (is_splice_insert (splice_info))
       {
          scte35_splice_insert* spliceInsert = get_splice_insert (splice_info);
+
+         // check for entry in map of old SCTE35 to be sure eventId is not re-used prematurely
+         LOG_INFO_ARGS("IngestThread %d: Searching for reuse of eventID %d", ebpIngestThreadParams->threadNum,
+            spliceInsert->splice_event_id);
+         void * value = hashtable_search(ebpIngestThreadParams->mapOldSCTE35SpliceInserts, &(spliceInsert->splice_event_id));
+         if (value != NULL)
+         {
+            LOG_WARN_ARGS("IngestThread %d: FAIL: SCTE35 event ID %d re-used prematurely", 
+               ebpIngestThreadParams->threadNum, spliceInsert->splice_event_id);
+            reportAddErrorLogArgs("IngestThread %d: FAIL: SCTE35 event ID %d re-used prematurely", 
+               ebpIngestThreadParams->threadNum, spliceInsert->splice_event_id);
+
+            ebpIngestThreadParams->ingestPassFail = 0;
+         }
+         else
+         {
+            LOG_INFO_ARGS("IngestThread %d: eventID %d NOT re-used", ebpIngestThreadParams->threadNum,
+               spliceInsert->splice_event_id);
+         }
                
          // if splice insert message, add to SCTE35 PTS lists for all partitions
          // if program_splice == 1, then add to all PIDS, else add to specific PIDS
@@ -101,12 +126,26 @@ static int validate_ts_packet(ts_packet_t *ts, elementary_stream_info_t *es_info
             {
                // GORP: if splice immediate flag, how to handle?
 
+               LOG_INFO_ARGS("IngestThread %d: scte35MinimumPrerollSeconds = %f, PTS = %"PRId64", currentPTS = %"PRId64"", 
+                  ebpIngestThreadParams->threadNum, g_ATSTestAppConfig.scte35MinimumPrerollSeconds, PTS, currentPTS);
+               LOG_INFO_ARGS("IngestThread %d: scte35MinimumPrerollSeconds = %f", ebpIngestThreadParams->threadNum,
+                  g_ATSTestAppConfig.scte35MinimumPrerollSeconds);
+               if (PTS < currentPTS + g_ATSTestAppConfig.scte35MinimumPrerollSeconds * 90000)
+               {
+                  LOG_WARN_ARGS("IngestThread %d: FAIL: current PTS %"PRId64" is too close to SCTE35 PTS %"PRId64" ", 
+                     ebpIngestThreadParams->threadNum, currentPTS, PTS);
+                  reportAddErrorLogArgs("IngestThread %d: FAIL: current PTS %"PRId64" is too close to SCTE35 PTS %"PRId64" ", 
+                     ebpIngestThreadParams->threadNum, currentPTS, PTS);
+
+                  ebpIngestThreadParams->ingestPassFail = 0;
+               }
+
                int arrayIndex = get2DArrayIndex (ebpIngestThreadParams->threadNum, 0, ebpIngestThreadParams->numStreams);    
                ebp_stream_info_t **streamInfos = &((ebpIngestThreadParams->allStreamInfos)[arrayIndex]);
 
                for (int i=0; i<ebpIngestThreadParams->numStreams; i++)
                {
-                  addSCTE35Point_AllBoundaries (ebpIngestThreadParams->threadNum, streamInfos[i], PTS);
+                  addSCTE35Point_AllBoundaries (ebpIngestThreadParams->threadNum, streamInfos[i], splice_info);
                }
             }
          }
@@ -121,6 +160,17 @@ static int validate_ts_packet(ts_packet_t *ts, elementary_stream_info_t *es_info
                   scte35_splice_insert_component *component = (scte35_splice_insert_component *) vqarray_get (spliceInsert->components, i);
                   if (component->splice_time != NULL && component->splice_time->pts_time != 0)
                   {
+                     uint64_t scte35PTS = component->splice_time->pts_time + splice_info->pts_adjustment;
+                     if (scte35PTS > (currentPTS + (uint64_t)(g_ATSTestAppConfig.scte35MinimumPrerollSeconds * 90000)))
+                     {
+                        LOG_WARN_ARGS("IngestThread %d: FAIL: current PTS %"PRId64" is too close to SCTE35 PTS %"PRId64" ", 
+                           ebpIngestThreadParams->threadNum, currentPTS, scte35PTS);
+                        reportAddErrorLogArgs("IngestThread %d: FAIL: current PTS %"PRId64" is too close to SCTE35 PTS %"PRId64" ", 
+                           ebpIngestThreadParams->threadNum, currentPTS, scte35PTS);
+
+                        ebpIngestThreadParams->ingestPassFail = 0;
+                     }
+
                      int arrayIndex = get2DArrayIndex (ebpIngestThreadParams->threadNum, 0, ebpIngestThreadParams->numStreams);    
                      ebp_stream_info_t **streamInfos = &((ebpIngestThreadParams->allStreamInfos)[arrayIndex]);
 
@@ -129,7 +179,7 @@ static int validate_ts_packet(ts_packet_t *ts, elementary_stream_info_t *es_info
                         if (streamInfos[i]->PID == component->component_tag)
                         {
                            addSCTE35Point_AllBoundaries (ebpIngestThreadParams->threadNum, streamInfos[i], 
-                              component->splice_time->pts_time);
+                              splice_info);
                         }
                      }
                   }
@@ -150,14 +200,14 @@ static int validate_ts_packet(ts_packet_t *ts, elementary_stream_info_t *es_info
 
                for (int i=0; i<ebpIngestThreadParams->numStreams; i++)
                {
-                  addSCTE35Point_AllBoundaries (ebpIngestThreadParams->threadNum, streamInfos[i], PTS);
+                  addSCTE35Point_AllBoundaries (ebpIngestThreadParams->threadNum, streamInfos[i], splice_info);
                }
             }
          }
       }
 
 
-      scte35_splice_info_section_free (splice_info);
+//      scte35_splice_info_section_free (splice_info);
       return 0;
    }
 
@@ -200,6 +250,7 @@ static int validate_pes_packet(pes_packet_t *pes, elementary_stream_info_t *esi,
    LOG_DEBUG("validate_pes_packet");
    // Get the first TS packet and check it for EBP
 
+
    ts_packet_t *first_ts = (ts_packet_t*)vqarray_get(ts_queue,0);
    if (first_ts == NULL)
    {
@@ -219,6 +270,11 @@ static int validate_pes_packet(pes_packet_t *pes, elementary_stream_info_t *esi,
    findFIFO (esi->elementary_PID, streamInfos, ebpIngestThreadParams->numStreams,
       &fifo, &fifoIndex);
    ebp_stream_info_t * streamInfo = streamInfos[fifoIndex];
+
+   if (streamInfo->isVideo)
+   {
+      ebpIngestThreadParams->currentVideoPTS = pes->header.PTS;
+   }
    
    if (fifo == NULL)
    {
@@ -274,7 +330,7 @@ static int validate_pes_packet(pes_packet_t *pes, elementary_stream_info_t *esi,
 //   LOG_INFO_ARGS("EBPIngestThread %d: Calling detectBoundary. (PID %d)", 
 //            ebpIngestThreadParams->threadNum, esi->elementary_PID);
    int boundaryDetected = detectBoundary(ebpIngestThreadParams->threadNum, ebp, 
-      streamInfo, pes->header.PTS, isBoundary);
+      streamInfo, pes->header.PTS, isBoundary, ebpIngestThreadParams->mapOldSCTE35SpliceInserts);
 //   LOG_INFO_ARGS("EBPIngestThread %d: DONE calling detectBoundary. (PID %d)", 
 //            ebpIngestThreadParams->threadNum, esi->elementary_PID);
 
@@ -389,7 +445,8 @@ static int validate_pes_packet(pes_packet_t *pes, elementary_stream_info_t *esi,
    free (isBoundary);
 
    // check if this PTS exceeds any SCTE35 PTSs
-   checkPTSAgainstSCTE35Points_AllBoundaries (ebpIngestThreadParams->threadNum, streamInfo, pes->header.PTS);
+   checkPTSAgainstSCTE35Points_AllBoundaries (ebpIngestThreadParams->threadNum, streamInfo, pes->header.PTS,
+      ebpIngestThreadParams->mapOldSCTE35SpliceInserts);
 
    pes_free(pes);
    return 1;
@@ -899,7 +956,8 @@ void triggerImplicitBoundaries (int threadNum, ebp_stream_info_t **streamInfoArr
    }
 }
 
-int detectBoundary(int threadNum, ebp_t* ebp, ebp_stream_info_t *streamInfo, uint64_t PTS, int *isBoundary)
+int detectBoundary(int threadNum, ebp_t* ebp, ebp_stream_info_t *streamInfo, uint64_t PTS, int *isBoundary,
+                   hashtable_t *mapOldSCTE35SpliceInserts)
 {
    // isBoundary is an array indexed by PartitionId;
 
@@ -935,7 +993,7 @@ int detectBoundary(int threadNum, ebp_t* ebp, ebp_stream_info_t *streamInfo, uin
                // check against SCTE35
                
                if (checkEBPAgainstSCTE35Points (ebpBoundaryInfo[i].listSCTE35, PTS, g_ATSTestAppConfig.ebpSCTE35PTSJitterSecs * 90000, threadNum,
-                  i /* partitionID */, streamInfo->PID))
+                  i /* partitionID */, streamInfo->PID, mapOldSCTE35SpliceInserts))
                {
                   char ptsString[13];
                   reportAddInfoLogArgs("IngestThread %d: PTS %"PRId64" (%s) matches SCTE35 PTS for partition %d: PID %d: distance from last PTS = %"PRId64"", 
@@ -1051,7 +1109,7 @@ int detectBoundary(int threadNum, ebp_t* ebp, ebp_stream_info_t *streamInfo, uin
       {
          // check against SCTE35  
          if (checkEBPAgainstSCTE35Points (ebpBoundaryInfo[i].listSCTE35, PTS, g_ATSTestAppConfig.ebpSCTE35PTSJitterSecs * 90000, threadNum,
-            i /* partitionID */, streamInfo->PID))
+            i /* partitionID */, streamInfo->PID, mapOldSCTE35SpliceInserts))
          {
             char ptsString[13];
             reportAddInfoLogArgs("IngestThread %d: PTS %"PRId64" (%s) matches SCTE35 PTS for partition %d: PID %d: distance from last PTS = %"PRId64"", 
@@ -1137,125 +1195,306 @@ uint64_t adjustPTSForTests (uint64_t PTSIn, int fileIndex, ebp_stream_info_t * s
    return PTSOut;
 }
 
-void addSCTE35Point (varray_t* scte35List, uint64_t PTS, int threadNum, int partitionID, uint32_t PID)
+uint64_t getSCTE35PTS (scte35_splice_info_section *scte35InfoSection, uint32_t PID)
 {
-   // walk list and compare PTS -- 
+   LOG_INFO ("getSCTE35PTS: entering")
+   uint64_t PTS = 0;
+   if (scte35InfoSection->splice_command_type == SCTE35_SPLICE_INSERT_CMD)
+   {
+      scte35_splice_insert* spliceInsert = get_splice_insert (scte35InfoSection);
+               
+      LOG_INFO ("getSCTE35PTS: inside SCTE35_SPLICE_INSERT_CMD")
+      if (spliceInsert -> program_splice_flag)
+      {
+         LOG_INFO ("getSCTE35PTS: program_splice_flag")
+         PTS = get_splice_insert_PTS (scte35InfoSection);
+         LOG_INFO_ARGS ("getSCTE35PTS: program_splice_flag: PTS = %"PRId64"", PTS)
+      }
+      else
+      {
+         LOG_INFO ("getSCTE35PTS: NO program_splice_flag")
+         if (spliceInsert->components != NULL)
+         {
+            // GORP: if splice immediate flag, how to handle?
+
+            for (int i=0; i<vqarray_length(spliceInsert->components); i++)
+            {
+               scte35_splice_insert_component *component = (scte35_splice_insert_component *) vqarray_get (spliceInsert->components, i);
+               if (component->splice_time != NULL && 
+                   component->splice_time->time_specified_flag && 
+                   component->splice_time->pts_time != 0 &&
+                   PID == component->component_tag)
+               {
+                  PTS = component->splice_time->pts_time;
+                  LOG_INFO_ARGS ("getSCTE35PTS: component: PTS = %"PRId64"", PTS)
+                  break;
+               }
+            }
+         }     
+      }
+   }
+   else if (scte35InfoSection->splice_command_type == SCTE35_TIME_SIGNAL_CMD)
+   {
+      scte35_time_signal *timeSignalCmd = (scte35_time_signal *)(scte35InfoSection->splice_command);
+      if (timeSignalCmd->splice_time->time_specified_flag)
+      {
+         PTS = timeSignalCmd->splice_time->pts_time;
+      }
+   }
+
+   return PTS;
+}
+
+void addSCTE35Point (varray_t* scte35List, scte35_splice_info_section *scte35InfoSection, int threadNum, int partitionID, uint32_t PID)
+{
+   // walk list and compare scte35_splice_info_section
+   // if scte35_splice_info_section is a splice_insert, check cancel flag
+   // also compare eventID, and replace if eventID is a dup
+   // if time_signal, compare PTS
    // if PTS equal to list member, no action necessary
-   // insert PTS in ordered list
+   // else insert PTS in ordered list
 
    int insertComplete = 0;
 
-   LOG_INFO_ARGS("IngestThread %d: Adding SCTE35 PTS %"PRId64" for partition %d: PID %d", 
-      threadNum, PTS, partitionID, PID);
-   reportAddInfoLogArgs("IngestThread %d: Adding SCTE35 PTS %"PRId64" for partition %d: PID %d", 
-      threadNum, PTS, partitionID, PID);
+   LOG_INFO_ARGS("IngestThread %d: Adding SCTE35 for partition %d: PID %d", 
+      threadNum, partitionID, PID);
+   reportAddInfoLogArgs("IngestThread %d: Adding SCTE35 for partition %d: PID %d", 
+      threadNum, partitionID, PID);
+
+   int isSpliceInsertCmd = 0;
+   int isTimeSignalCmd = 0;
+   scte35_splice_insert *spliceInsertCmd = NULL;
+   uint64_t PTS = 0;
+   if (scte35InfoSection->splice_command_type == SCTE35_SPLICE_INSERT_CMD)
+   {
+      isSpliceInsertCmd = 1;
+      spliceInsertCmd = (scte35_splice_insert *)(scte35InfoSection->splice_command);
+   }
+   else if (scte35InfoSection->splice_command_type == SCTE35_TIME_SIGNAL_CMD)
+   {
+      isTimeSignalCmd = 1;
+      scte35_time_signal *timeSignalCmd = (scte35_time_signal *)(scte35InfoSection->splice_command);
+      if (timeSignalCmd->splice_time->time_specified_flag)
+      {
+         PTS = timeSignalCmd->splice_time->pts_time;
+      }
+      else
+      {
+         return;
+      }
+   }
 
    for (int i=0; i<varray_length(scte35List); i++)
    {
-      uint64_t *PTSTemp = (uint64_t *) varray_get (scte35List, i);
-      if (*PTSTemp == PTS)
+      scte35_splice_info_section *scte35InfoSectionTemp = (scte35_splice_info_section *) varray_get (scte35List, i);
+      if (isSpliceInsertCmd && scte35InfoSectionTemp->splice_command_type == SCTE35_SPLICE_INSERT_CMD)
       {
-         LOG_INFO_ARGS("IngestThread %d: SCTE35 PTS %"PRId64" for partition %d: PID %d already present -- skipping", 
-            threadNum, PTS, partitionID, PID);
-         insertComplete = 1;
-         break;
-      }
-      
-      if (PTS < *PTSTemp)
-      {
-         // insert into SCTEList
-         // GORP: free these later
-         uint64_t *PTSCopy = (uint64_t *) malloc (sizeof (uint64_t));
-         *PTSCopy = PTS;
-         varray_insert(scte35List, i, PTSCopy);
+         scte35_splice_insert *spliceInsertCmdTemp = (scte35_splice_insert *)(scte35InfoSectionTemp->splice_command);
+         if (spliceInsertCmd->splice_event_id == spliceInsertCmdTemp->splice_event_id)
+         {
+            if (spliceInsertCmd->splice_event_cancel_indicator)
+            {
+               // delete event
+               varray_remove (scte35List, i);
+               LOG_INFO_ARGS("IngestThread %d: SCTE35 EventID %d for partition %d: PID %d cancelled -- removing", 
+                  threadNum, spliceInsertCmd->splice_event_id, partitionID, PID);
+            }
+            else
+            {
+               // replace element
+               varray_set (scte35List, i, scte35InfoSection);
+               LOG_INFO_ARGS("IngestThread %d: SCTE35 EventID %d for partition %d: PID %d already present -- replacing", 
+                  threadNum, spliceInsertCmd->splice_event_id, partitionID, PID);
+            }
 
-         insertComplete = 1;
-         break;
+            insertComplete = 1;
+            break;
+         }
+
       }
+      else if (isTimeSignalCmd && scte35InfoSectionTemp->splice_command_type == SCTE35_TIME_SIGNAL_CMD)
+      {
+         scte35_time_signal *timeSignalCmdTemp = (scte35_time_signal *)(scte35InfoSectionTemp->splice_command);
+         // NOTE: time_specified_flag should already have been checked when this event was added to the list
+         uint64_t PTSTemp = timeSignalCmdTemp->splice_time->pts_time + scte35InfoSection->pts_adjustment;
+
+         if (PTS == PTSTemp)
+         {
+            // do nothing
+            insertComplete = 1;
+            break;
+         }
+         if (PTS < PTSTemp)
+         {
+            // insert into SCTEList
+            varray_insert(scte35List, i, scte35InfoSection);
+
+            insertComplete = 1;
+            break;
+         }
+      }      
    }
 
    if (!insertComplete)
    {
       // add to end of SCTEList
-      uint64_t *PTSCopy = (uint64_t *) malloc (sizeof (uint64_t));
-     *PTSCopy = PTS;
-      varray_add(scte35List, PTSCopy);
+      varray_add(scte35List, scte35InfoSection);
    }
 }
 
 int checkPTSAgainstSCTE35Points (varray_t* scte35List, uint64_t PTS, uint64_t deltaSCTE35PTS, int threadNum,
-   int partitionID, uint32_t PID)
+   int partitionID, uint32_t PID, hashtable_t *mapOldSCTE35SpliceInserts)
 {
    // check if PTS has passed entries in SCTE35 list
-//   LOG_INFO_ARGS("IngestThread %d: checkPTSAgainstSCTE35Points: PTS = %"PRId64" for partition %d: PID %d, deltaSCTE35PTS = %"PRId64"", 
-//      threadNum, PTS, partitionID, PID, deltaSCTE35PTS);
+   LOG_INFO_ARGS("IngestThread %d: checkPTSAgainstSCTE35Points: PTS = %"PRId64" for partition %d: PID %d, deltaSCTE35PTS = %"PRId64"", 
+      threadNum, PTS, partitionID, PID, deltaSCTE35PTS);
 
    int nReturnCode = 0;
 
-   for (int i=0; i<varray_length(scte35List); i++)
+   LOG_INFO_ARGS ("IngestThread %d: checkPTSAgainstSCTE35Points: varray_length(scte35List) = %d", 
+      threadNum, varray_length(scte35List));
+   for (int i=0; i<varray_length(scte35List); )
    {
-      uint64_t *SCTE35PTS = (uint64_t *) varray_get (scte35List, i);
-//      LOG_INFO_ARGS("IngestThread %d: checkPTSAgainstSCTE35Points: *SCTE35PTS = %"PRId64"", 
-//         threadNum, *SCTE35PTS);
+      scte35_splice_info_section *scte35InfoSection = (scte35_splice_info_section *) varray_get (scte35List, i);
 
-      if (PTS > *SCTE35PTS + deltaSCTE35PTS)
+      scte35_splice_info_section_print_stdout(scte35InfoSection);
+      uint64_t SCTE35PTS = getSCTE35PTS (scte35InfoSection, PID);
+      LOG_INFO_ARGS("IngestThread %d: checkPTSAgainstSCTE35Points: SCTE35PTS = %"PRId64"", 
+         threadNum, SCTE35PTS);
+
+      if (PTS > SCTE35PTS + deltaSCTE35PTS)
       {
          // SCTE35 point has been passed without an EBP being present, so log error and discard SCTE35 PTS
 
          LOG_ERROR_ARGS("IngestThread %d: FAIL: Out of date SCTE35 PTS %"PRId64" detected for partition %d: PID %d", 
-            threadNum, *SCTE35PTS, partitionID, PID);
+            threadNum, SCTE35PTS, partitionID, PID);
          reportAddErrorLogArgs("IngestThread %d: FAIL: Out of date SCTE35 PTS %"PRId64" detected for partition %d: PID %d", 
-            threadNum, *SCTE35PTS, partitionID, PID);
+            threadNum, SCTE35PTS, partitionID, PID);
+
+         // add to map of oldSCTE35
+         if (is_splice_insert(scte35InfoSection))
+         {
+            uint32_t tmpEventId = get_splice_insert_eventID (scte35InfoSection);
+            // check if this eventID has already been added
+            LOG_INFO_ARGS("IngestThread %d: Checking to see if event ID %d is already in hashtable", 
+               threadNum, tmpEventId);
+            if (hashtable_search(mapOldSCTE35SpliceInserts, &tmpEventId) == NULL)
+            {
+               LOG_INFO_ARGS("IngestThread %d: Event ID %d NOT already in hashtable", 
+                  threadNum, tmpEventId);
+               uint64_t* myPTS = (uint64_t*) calloc (1, sizeof (uint64_t));
+               *myPTS = scte35_get_latest_PTS (scte35InfoSection);
+
+               uint32_t* myEventId = (uint32_t*) calloc (1, sizeof (uint32_t));
+               *myEventId = get_splice_insert_eventID (scte35InfoSection);
+
+               LOG_INFO_ARGS("IngestThread %d: Adding event ID %d to hashtable (PTS = %"PRId64")", 
+                  threadNum, *myEventId, *myPTS);
+               hashtable_insert (mapOldSCTE35SpliceInserts, myEventId, myPTS);
+               LOG_INFO_ARGS("IngestThread %d: Done adding event ID %d to hashtable (PTS = %"PRId64")", 
+                  threadNum, *myEventId, *myPTS);
+            }
+            else
+            {
+               LOG_INFO_ARGS("IngestThread %d: Event ID %d IS already in hashtable", 
+                  threadNum, tmpEventId);
+            }
+         }
+         else
+         {
+            LOG_INFO_ARGS("IngestThread %d: SCTE35 msg is not a splice insert", 
+                  threadNum);
+         }
 
          varray_remove (scte35List, i);
-         free (SCTE35PTS);
+         // GORP: need to make spliceinfo copy when adding to list
+//GORP         free (scte35InfoSection);
 
+         // careful here -- if we have just removed the current element, dont increment i
+
+         // this signals test failure to calling code
          nReturnCode = -1;
       }
       else
       {
-         break;
+         i++;
       }
    }
 
+   LOG_INFO_ARGS("IngestThread %d: checkPTSAgainstSCTE35Points returning", 
+     threadNum);
    return nReturnCode;
 }
 
 int checkEBPAgainstSCTE35Points (varray_t* scte35List, uint64_t PTS, uint64_t deltaSCTE35PTS, int threadNum,
-   int partitionID, uint32_t PID)
+   int partitionID, uint32_t PID, hashtable_t *mapOldSCTE35SpliceInserts)
 {
+   LOG_INFO ("checkEBPAgainstSCTE35Points -- entering");
    int returnCode = 0;
    // check if PTS is sufficiently near the SCTE35 points
 
 //   LOG_INFO_ARGS("IngestThread %d: checkEBPAgainstSCTE35Points: PTS = %"PRId64" for partition %d: PID %d, deltaSCTE35PTS = %"PRId64"", 
 //      threadNum, PTS, partitionID, PID, deltaSCTE35PTS);
 
-   for (int i=0; i<varray_length(scte35List); i++)
+   for (int i=0; i<varray_length(scte35List); )
    {
-      uint64_t *SCTE35PTS = (uint64_t *) varray_get (scte35List, i);
+      scte35_splice_info_section *scte35InfoSection = (scte35_splice_info_section *) varray_get (scte35List, i);
 //      LOG_INFO_ARGS("IngestThread %d: checkEBPAgainstSCTE35Points: *SCTE35PTS = %"PRId64"", 
 //         threadNum, *SCTE35PTS);
 
-      if (PTS >= *SCTE35PTS - deltaSCTE35PTS && PTS <= *SCTE35PTS + deltaSCTE35PTS)
+      uint64_t SCTE35PTS = getSCTE35PTS (scte35InfoSection, PID);
+
+      if (PTS >= SCTE35PTS - deltaSCTE35PTS && PTS <= SCTE35PTS + deltaSCTE35PTS)
       {
          // match -- remove entry from SCTE35 list
 
          LOG_INFO_ARGS("IngestThread %d: PTS %"PRId64" matches SCTE35 PTS %"PRId64" for partition %d: PID %d", 
-            threadNum, PTS, *SCTE35PTS, partitionID, PID);
+            threadNum, PTS, SCTE35PTS, partitionID, PID);
          reportAddInfoLogArgs("IngestThread %d: PTS %"PRId64" matches SCTE35 PTS %"PRId64" for partition %d: PID %d", 
-            threadNum, PTS, *SCTE35PTS, partitionID, PID);
+            threadNum, PTS, SCTE35PTS, partitionID, PID);
+
+         // add to map of oldSCTE35
+         if (is_splice_insert(scte35InfoSection))
+         {
+            LOG_INFO_ARGS("IngestThread %d: checking mapOldSCTE35SpliceInserts...", 
+               threadNum);
+            uint32_t tmpEventId = get_splice_insert_eventID (scte35InfoSection);
+            if (hashtable_search(mapOldSCTE35SpliceInserts, &tmpEventId) == NULL)
+            {
+               LOG_INFO_ARGS("IngestThread %d: adding SCTE35 to mapOldSCTE35SpliceInserts", 
+                threadNum);
+               uint64_t* myPTS = (uint64_t*) calloc (1, sizeof (uint64_t));
+               *myPTS = scte35_get_latest_PTS (scte35InfoSection);
+
+               uint32_t* myEventId = (uint32_t*) calloc (1, sizeof (uint32_t));
+               *myEventId = get_splice_insert_eventID (scte35InfoSection);
+
+               hashtable_insert (mapOldSCTE35SpliceInserts, myEventId, myPTS);
+            }
+         }
+
          varray_remove (scte35List, i);
-         free (SCTE35PTS);
+         // GORP: different lists all use this scteInfo instance -- need to make copies before adding it to the lists
+         // in validate_ts_packet
+// GORP         free (scte35InfoSection);
+         // careful here -- if we have just removed the current element, dont increment i
+
          returnCode = 1;
-         break;
+         break;  // only allow one matched SCTE35 at a time
+      }
+      else
+      {
+         i++;
       }
    }
 
+   LOG_INFO ("checkEBPAgainstSCTE35Points -- exiting");
    return returnCode;
 }
 
-void addSCTE35Point_AllBoundaries (int threadNum, ebp_stream_info_t *streamInfo, uint64_t PTS)
+void addSCTE35Point_AllBoundaries (int threadNum, ebp_stream_info_t *streamInfo, scte35_splice_info_section *scte35InfoSection)
 {
+   LOG_INFO ("addSCTE35Point_AllBoundaries -- entering");
    ebp_boundary_info_t *ebpBoundaryInfo = streamInfo->ebpBoundaryInfo;
 
    if (streamInfo->fifo == NULL)
@@ -1275,12 +1514,15 @@ void addSCTE35Point_AllBoundaries (int threadNum, ebp_stream_info_t *streamInfo,
       {
          ebpBoundaryInfo[i].listSCTE35 = varray_new();
       }
-      addSCTE35Point (ebpBoundaryInfo[i].listSCTE35, PTS, threadNum, i /* partitionID */, streamInfo->PID);
+      addSCTE35Point (ebpBoundaryInfo[i].listSCTE35, scte35InfoSection, threadNum, i /* partitionID */, streamInfo->PID);
    }
+   LOG_INFO ("addSCTE35Point_AllBoundaries -- exiting");
 }
 
-void checkPTSAgainstSCTE35Points_AllBoundaries (int threadNum, ebp_stream_info_t *streamInfo, uint64_t PTS)
+void checkPTSAgainstSCTE35Points_AllBoundaries (int threadNum, ebp_stream_info_t *streamInfo, uint64_t PTS,
+                                                hashtable_t *mapOldSCTE35SpliceInserts)
 {
+   LOG_INFO ("checkPTSAgainstSCTE35Points_AllBoundaries -- entering");
    ebp_boundary_info_t *ebpBoundaryInfo = streamInfo->ebpBoundaryInfo;
 
    for (int i=0; i<EBP_NUM_PARTITIONS; i++)
@@ -1291,10 +1533,38 @@ void checkPTSAgainstSCTE35Points_AllBoundaries (int threadNum, ebp_stream_info_t
       }  
       
       if (checkPTSAgainstSCTE35Points (ebpBoundaryInfo[i].listSCTE35, PTS, g_ATSTestAppConfig.ebpSCTE35PTSJitterSecs * 90000, 
-         threadNum, i /* partitionID */, streamInfo->PID) != 0)
+         threadNum, i /* partitionID */, streamInfo->PID, mapOldSCTE35SpliceInserts) != 0)
       {
          streamInfo->streamPassFail = 0;
       }
    }
+   LOG_INFO ("checkPTSAgainstSCTE35Points_AllBoundaries -- exiting");
+}
+
+
+void pruneOldSCTE35Map(hashtable_t *mapOldSCTE35SpliceInserts, uint64_t currentPTS)
+{
+   void** keyArray;
+   int keyArraySz = 0;
+   printf ("pruneOldSCTE35Map -- entering (printf)");
+   LOG_INFO ("pruneOldSCTE35Map -- entering");
+   hashtable_get_key_array(mapOldSCTE35SpliceInserts, &keyArray, &keyArraySz);
+
+   for (int i=0; i<keyArraySz; i++)
+   {
+      void * value = hashtable_search(mapOldSCTE35SpliceInserts, keyArray[i]);
+      uint64_t *scte35PTS = (uint64_t *) value;
+      LOG_INFO_ARGS ("pruneOldSCTE35Map (%d) -- key = %x PTS = %"PRId64"", i, keyArray[i], *scte35PTS);
+
+      if (currentPTS > *scte35PTS + g_ATSTestAppConfig.scte35SpliceEventTimeToLiveSecs * 90000)
+      {
+         LOG_INFO_ARGS ("pruneOldSCTE35Map (%d) -- removing key %x", i, keyArray[i]);
+         hashtable_remove(mapOldSCTE35SpliceInserts, keyArray[i]);
+      }
+   }
+
+   LOG_INFO ("pruneOldSCTE35Map -- freeing key Array");
+   free (keyArray);
+   LOG_INFO ("pruneOldSCTE35Map -- exiting");
 }
 
