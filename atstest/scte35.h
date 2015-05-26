@@ -165,6 +165,7 @@ scte35_splice_info_section* scte35_splice_info_section_new();
 void scte35_splice_info_section_free(scte35_splice_info_section *sis); 
 int scte35_splice_info_section_read(scte35_splice_info_section *sis, uint8_t *buf, size_t buf_len, 
     uint32_t payload_unit_start_indicator, psi_table_buffer_t *scte35TableBuffer); 
+scte35_splice_info_section* scte35_splice_info_section_copy(scte35_splice_info_section *sis);
 void scte35_splice_info_section_print_stdout(const scte35_splice_info_section *sis); 
 
 uint64_t get_splice_insert_PTS (scte35_splice_info_section *sis);
@@ -193,6 +194,11 @@ void scte35_free_bandwidth_reservation();
 void scte35_free_private_command(scte35_private_command *private_command);
 void scte35_free_splice_event(scte35_splice_event* spice_event);
 
+scte35_splice_schedule * scte35_copy_splice_schedule(scte35_splice_schedule *splice_schedule);
+scte35_splice_insert* scte35_copy_splice_insert(scte35_splice_insert* splice_insert);
+scte35_time_signal* scte35_copy_time_signal(scte35_time_signal* time_signal);
+scte35_private_command * scte35_copy_private_command(scte35_private_command *private_command);
+
 void scte35_splice_null_print_stdout ();
 void scte35_splice_schedule_print_stdout (const scte35_splice_schedule *splice_schedule);
 void scte35_splice_event_print_stdout (const scte35_splice_event *splice_event, int splice_event_num);
@@ -208,7 +214,10 @@ scte35_splice_event_component* scte35_parse_splice_event_component(bs_t *b);
 scte35_break_duration* scte35_parse_break_duration (bs_t *b);
 
 scte35_splice_descriptor* scte35_parse_splice_descriptor (bs_t *b);
+scte35_splice_descriptor* scte35_copy_splice_descriptor (scte35_splice_descriptor* splice_descriptor);
 void scte35_free_splice_descriptor (scte35_splice_descriptor* splice_descriptor);
+
+scte35_splice_event* scte35_copy_splice_event(scte35_splice_event* splice_event);
 
 
 #endif  // __H_SCTE35

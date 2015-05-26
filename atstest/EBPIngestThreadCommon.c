@@ -207,7 +207,7 @@ static int validate_ts_packet(ts_packet_t *ts, elementary_stream_info_t *es_info
       }
 
 
-//      scte35_splice_info_section_free (splice_info);
+      scte35_splice_info_section_free (splice_info);
       return 0;
    }
 
@@ -1302,15 +1302,16 @@ void addSCTE35Point (varray_t* scte35List, scte35_splice_info_section *scte35Inf
             else
             {
                // replace element
-               varray_set (scte35List, i, scte35InfoSection);
+               scte35_splice_info_section* scte35InfoSectionTemp2 = scte35_splice_info_section_copy(scte35InfoSection);
+               varray_set (scte35List, i, scte35InfoSectionTemp2);
                LOG_INFO_ARGS("IngestThread %d: SCTE35 EventID %d for partition %d: PID %d already present -- replacing", 
                   threadNum, spliceInsertCmd->splice_event_id, partitionID, PID);
             }
 
+            scte35_splice_info_section_free(scte35InfoSectionTemp); 
             insertComplete = 1;
             break;
          }
-
       }
       else if (isTimeSignalCmd && scte35InfoSectionTemp->splice_command_type == SCTE35_TIME_SIGNAL_CMD)
       {
@@ -1327,7 +1328,8 @@ void addSCTE35Point (varray_t* scte35List, scte35_splice_info_section *scte35Inf
          if (PTS < PTSTemp)
          {
             // insert into SCTEList
-            varray_insert(scte35List, i, scte35InfoSection);
+            scte35_splice_info_section* scte35InfoSectionTemp2 = scte35_splice_info_section_copy(scte35InfoSection);
+            varray_insert(scte35List, i, scte35InfoSectionTemp2);
 
             insertComplete = 1;
             break;
@@ -1338,7 +1340,8 @@ void addSCTE35Point (varray_t* scte35List, scte35_splice_info_section *scte35Inf
    if (!insertComplete)
    {
       // add to end of SCTEList
-      varray_add(scte35List, scte35InfoSection);
+      scte35_splice_info_section* scte35InfoSectionTemp2 = scte35_splice_info_section_copy(scte35InfoSection);
+      varray_add(scte35List, scte35InfoSectionTemp2);
    }
 }
 
@@ -1378,6 +1381,9 @@ int checkPTSAgainstSCTE35Points (varray_t* scte35List, uint64_t PTS, uint64_t de
             // check if this eventID has already been added
             LOG_INFO_ARGS("IngestThread %d: Checking to see if event ID %d is already in hashtable", 
                threadNum, tmpEventId);
+            LOG_INFO_ARGS("IngestThread %d: hashtable count = %d", 
+               threadNum, hashtable_count(mapOldSCTE35SpliceInserts));
+            
             if (hashtable_search(mapOldSCTE35SpliceInserts, &tmpEventId) == NULL)
             {
                LOG_INFO_ARGS("IngestThread %d: Event ID %d NOT already in hashtable", 
@@ -1407,8 +1413,7 @@ int checkPTSAgainstSCTE35Points (varray_t* scte35List, uint64_t PTS, uint64_t de
          }
 
          varray_remove (scte35List, i);
-         // GORP: need to make spliceinfo copy when adding to list
-//GORP         free (scte35InfoSection);
+         scte35_splice_info_section_free (scte35InfoSection);
 
          // careful here -- if we have just removed the current element, dont increment i
 
@@ -1461,22 +1466,21 @@ int checkEBPAgainstSCTE35Points (varray_t* scte35List, uint64_t PTS, uint64_t de
             uint32_t tmpEventId = get_splice_insert_eventID (scte35InfoSection);
             if (hashtable_search(mapOldSCTE35SpliceInserts, &tmpEventId) == NULL)
             {
-               LOG_INFO_ARGS("IngestThread %d: adding SCTE35 to mapOldSCTE35SpliceInserts", 
-                threadNum);
                uint64_t* myPTS = (uint64_t*) calloc (1, sizeof (uint64_t));
                *myPTS = scte35_get_latest_PTS (scte35InfoSection);
 
                uint32_t* myEventId = (uint32_t*) calloc (1, sizeof (uint32_t));
                *myEventId = get_splice_insert_eventID (scte35InfoSection);
 
+               LOG_INFO_ARGS("IngestThread %d: adding SCTE35 to mapOldSCTE35SpliceInserts, eventID = %d", 
+                  threadNum, *myEventId);
                hashtable_insert (mapOldSCTE35SpliceInserts, myEventId, myPTS);
             }
          }
 
          varray_remove (scte35List, i);
-         // GORP: different lists all use this scteInfo instance -- need to make copies before adding it to the lists
-         // in validate_ts_packet
-// GORP         free (scte35InfoSection);
+         scte35_splice_info_section_free (scte35InfoSection);
+
          // careful here -- if we have just removed the current element, dont increment i
 
          returnCode = 1;
@@ -1554,11 +1558,11 @@ void pruneOldSCTE35Map(hashtable_t *mapOldSCTE35SpliceInserts, uint64_t currentP
    {
       void * value = hashtable_search(mapOldSCTE35SpliceInserts, keyArray[i]);
       uint64_t *scte35PTS = (uint64_t *) value;
-      LOG_INFO_ARGS ("pruneOldSCTE35Map (%d) -- key = %x PTS = %"PRId64"", i, keyArray[i], *scte35PTS);
+      LOG_INFO_ARGS ("pruneOldSCTE35Map (%d) -- key = %d PTS = %"PRId64"", i, *((uint32_t*)keyArray[i]), *scte35PTS);
 
       if (currentPTS > *scte35PTS + g_ATSTestAppConfig.scte35SpliceEventTimeToLiveSecs * 90000)
       {
-         LOG_INFO_ARGS ("pruneOldSCTE35Map (%d) -- removing key %x", i, keyArray[i]);
+         LOG_INFO_ARGS ("pruneOldSCTE35Map (%d) -- removing key %d", i, *((uint32_t*)keyArray[i]));
          hashtable_remove(mapOldSCTE35SpliceInserts, keyArray[i]);
       }
    }

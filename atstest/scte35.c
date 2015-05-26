@@ -290,6 +290,73 @@ int scte35_splice_info_section_read(scte35_splice_info_section *sis, uint8_t *bu
    return 1;
 }
 
+scte35_splice_info_section* scte35_splice_info_section_copy(scte35_splice_info_section *sis)
+{
+   LOG_INFO ("scte35_splice_info_section_copy");
+   scte35_splice_info_section *sisNew = (scte35_splice_info_section *)calloc(1, sizeof(scte35_splice_info_section));
+
+   sisNew->table_id = sis->table_id; 
+   sisNew->section_syntax_indicator = sis->section_syntax_indicator; 
+   sisNew->private_indicator = sis->private_indicator; 
+   sisNew->section_length = sis->section_length; 
+   sisNew->protocol_version = sis->protocol_version; 
+   sisNew->encrypted_packet = sis->encrypted_packet; 
+   sisNew->encryption_algorithm = sis->encryption_algorithm; 
+   sisNew->pts_adjustment = sis->pts_adjustment; 
+   sisNew->cw_index = sis->cw_index;
+   sisNew->tier = sis->tier; 
+   sisNew->splice_command_length = sis->splice_command_length; 
+   sisNew->splice_command_type = sis->splice_command_type;
+
+   sisNew->E_CRC_32 = sis->E_CRC_32;
+   sisNew->CRC_32 = sis->CRC_32;
+
+   LOG_INFO_ARGS ("scte35_splice_info_section_copy: splice_command_type = %d", sis->splice_command_type);
+   if(sis->splice_command_type == SCTE35_NULL_CMD)
+   {
+      // do nothing
+   }
+   else if(sis->splice_command_type == SCTE35_SPLICE_SCHEDULE_CMD)
+   {
+      sisNew->splice_command = scte35_copy_splice_schedule(sis->splice_command);
+   }
+   else if(sis->splice_command_type == SCTE35_SPLICE_INSERT_CMD)
+   {
+      sisNew->splice_command = scte35_copy_splice_insert(sis->splice_command);
+   }
+   else if(sis->splice_command_type == SCTE35_TIME_SIGNAL_CMD)
+   {
+      sisNew->splice_command = scte35_copy_time_signal(sis->splice_command);
+   }
+   else if(sis->splice_command_type == SCTE35_BANDWIDTH_RESERVATION_CMD)
+   {
+      // do nothing
+   }
+   else if(sis->splice_command_type == SCTE35_PRIVATE_COMMAND_CMD)
+   {
+      sisNew->splice_command = scte35_copy_private_command(sis->splice_command);
+   }
+
+   LOG_INFO ("scte35_splice_info_section_copy: copying descriptors");
+   if (sis->splice_descriptors != NULL)
+   {
+      uint16_t descriptor_loop_length = vqarray_length (sis->splice_descriptors);
+
+      sisNew->splice_descriptors = vqarray_new();
+
+      for (int i=0; i<descriptor_loop_length; i++)
+      {
+         // copy descriptors
+         scte35_splice_descriptor* splice_descriptor = vqarray_get (sis->splice_descriptors, i);
+         scte35_splice_descriptor* splice_descriptor_new = scte35_copy_splice_descriptor (splice_descriptor);
+         vqarray_add (sisNew->splice_descriptors, splice_descriptor_new);
+      }
+   }
+ 
+   LOG_INFO ("scte35_splice_info_section_copy: exiting");
+   return sisNew;
+}
+
 void scte35_splice_info_section_print_stdout(const scte35_splice_info_section *sis)
 {
    LOG_INFO ("\nSCTE35 Splice Info Section:");
@@ -433,6 +500,11 @@ void scte35_splice_event_print_stdout (const scte35_splice_event *splice_event, 
 
 
 void scte35_parse_splice_null(bs_t *b)
+{
+   // nothing to do here: splice_null is empty
+}
+
+void scte35_copy_splice_null()
 {
    // nothing to do here: splice_null is empty
 }
@@ -822,5 +894,154 @@ uint64_t scte35_get_latest_PTS (scte35_splice_info_section *sis)
    }
      
    return newestPTS;
+}
+
+scte35_splice_schedule * scte35_copy_splice_schedule(scte35_splice_schedule *splice_schedule)
+{
+   scte35_splice_schedule *splice_schedule_new = (scte35_splice_schedule *)calloc(1, sizeof(scte35_splice_schedule));
+
+   if (splice_schedule->splice_events != NULL)
+   {
+      splice_schedule_new->splice_events = vqarray_new();
+      uint8_t splice_event_count = vqarray_length (splice_schedule->splice_events);
+
+      for (int i=0; i<splice_event_count; i++)
+      {
+         scte35_splice_event* splice_event = vqarray_get (splice_schedule->splice_events, i);
+
+         scte35_splice_event* splice_event_new = scte35_copy_splice_event(splice_event);
+
+         vqarray_add (splice_schedule_new->splice_events, splice_event_new);
+      }
+   }
+
+   return splice_schedule_new;
+}
+
+scte35_splice_insert* scte35_copy_splice_insert(scte35_splice_insert* splice_insert)
+{
+   LOG_INFO ("scte35_copy_splice_insert");
+
+   scte35_splice_insert *splice_insert_new = (scte35_splice_insert *)calloc(1, sizeof(scte35_splice_insert));
+
+   splice_insert_new->splice_event_id = splice_insert->splice_event_id;
+   splice_insert_new->splice_event_cancel_indicator = splice_insert->splice_event_cancel_indicator;
+   splice_insert_new->out_of_network_indicator = splice_insert->out_of_network_indicator;
+   splice_insert_new->program_splice_flag = splice_insert->program_splice_flag;
+   splice_insert_new->duration_flag = splice_insert->duration_flag;
+   splice_insert_new->splice_immediate_flag = splice_insert->splice_immediate_flag;
+   splice_insert_new->unique_program_id = splice_insert->unique_program_id;
+   splice_insert_new->avail_num = splice_insert->avail_num;
+   splice_insert_new->avails_expected = splice_insert->avails_expected;
+
+   if (splice_insert->splice_time != NULL)
+   {
+      splice_insert_new->splice_time = (scte35_splice_time *)calloc(1, sizeof(scte35_splice_time));
+      splice_insert_new->splice_time->time_specified_flag = splice_insert->splice_time->time_specified_flag;
+      splice_insert_new->splice_time->pts_time = splice_insert->splice_time->pts_time;
+   }
+
+   if (splice_insert->break_duration != NULL)
+   {
+      splice_insert_new->break_duration = (scte35_break_duration *)calloc(1, sizeof(scte35_break_duration));
+      splice_insert_new->break_duration->auto_return = splice_insert->break_duration->auto_return;
+      splice_insert_new->break_duration->duration = splice_insert->break_duration->duration;
+   }
+
+   if (splice_insert->components != NULL)
+   {
+      splice_insert_new->components = vqarray_new();
+
+      uint8_t component_count = vqarray_length (splice_insert->components);
+      for (int i=0; i<component_count; i++)
+      {
+         scte35_splice_event_component *splice_component = vqarray_get (splice_insert->components, i);
+         scte35_splice_event_component *splice_component_new = (scte35_splice_event_component *)calloc(1, sizeof(scte35_splice_event_component));
+
+         splice_component_new->component_tag = splice_component->component_tag;
+         splice_component_new->splice_time = splice_component->splice_time;
+
+         vqarray_add(splice_insert_new->components, splice_component_new);
+      }
+   }
+
+   LOG_INFO ("scte35_copy_splice_insert: exiting");
+   return splice_insert_new;
+}
+
+scte35_time_signal* scte35_copy_time_signal(scte35_time_signal* time_signal)
+{
+   scte35_time_signal *time_signal_new = (scte35_time_signal *)calloc(1, sizeof(scte35_time_signal));
+
+   time_signal_new->splice_time = (scte35_splice_time *)calloc(1, sizeof(scte35_splice_time));
+   time_signal_new->splice_time->time_specified_flag = time_signal->splice_time->time_specified_flag;
+   time_signal_new->splice_time->pts_time = time_signal->splice_time->pts_time;
+
+   return time_signal_new;
+}
+
+scte35_private_command * scte35_copy_private_command(scte35_private_command *private_command)
+{
+   scte35_private_command *private_command_new = (scte35_private_command *)calloc(1, sizeof(scte35_private_command));
+
+   private_command_new->identifier = private_command->identifier;
+   private_command_new->private_bytes_sz = private_command->private_bytes_sz;
+   private_command_new->private_bytes = (uint8_t*) calloc (1, private_command_new->private_bytes_sz);
+
+   memcpy (private_command_new->private_bytes, private_command->private_bytes, private_command_new->private_bytes_sz);
+
+   return private_command_new;
+}
+
+scte35_splice_descriptor* scte35_copy_splice_descriptor (scte35_splice_descriptor* splice_descriptor)
+{
+   scte35_splice_descriptor *splice_descriptor_new = (scte35_splice_descriptor *)calloc(1, sizeof(scte35_splice_descriptor));
+
+   splice_descriptor_new->tag = splice_descriptor->tag;
+   splice_descriptor_new->length = splice_descriptor->length;
+   splice_descriptor_new->identifier = splice_descriptor->identifier;
+
+   splice_descriptor_new->private_bytes = (uint8_t *)calloc (splice_descriptor->length, 1);
+   memcpy (splice_descriptor_new->private_bytes, splice_descriptor->private_bytes, splice_descriptor->length);
+
+   return splice_descriptor_new;
+}
+
+scte35_splice_event* scte35_copy_splice_event(scte35_splice_event* splice_event)
+{
+   scte35_splice_event *splice_event_new = (scte35_splice_event *)calloc(1, sizeof(scte35_splice_event));
+
+   splice_event_new->splice_event_id = splice_event->splice_event_id;
+   splice_event_new->splice_event_cancel_indicator = splice_event->splice_event_cancel_indicator;
+   splice_event_new->out_of_network_indicator = splice_event->out_of_network_indicator;
+   splice_event_new->program_splice_flag = splice_event->program_splice_flag;
+   splice_event_new->duration_flag = splice_event->duration_flag;
+   splice_event_new->utc_splice_time = splice_event->utc_splice_time;
+   splice_event_new->unique_program_id = splice_event->unique_program_id;
+   splice_event_new->avail_num = splice_event->avail_num;
+   splice_event_new->avails_expected = splice_event->avails_expected;
+
+   splice_event_new->break_duration = (scte35_break_duration *)calloc(1, sizeof(scte35_break_duration));
+   splice_event_new->break_duration->auto_return = splice_event->break_duration->auto_return;
+   splice_event_new->break_duration->duration = splice_event->break_duration->duration;
+
+   if (splice_event->components != NULL)
+   {
+      splice_event_new->components = vqarray_new();
+
+      uint8_t component_count = vqarray_length (splice_event->components);
+      for (int i=0; i<component_count; i++)
+      {
+         scte35_splice_event_component *splice_component = vqarray_get (splice_event->components, i);
+         scte35_splice_event_component *splice_component_new = (scte35_splice_event_component *)calloc(1, sizeof(scte35_splice_event_component));
+
+         splice_component_new->component_tag = splice_component->component_tag;
+         splice_component_new->splice_time = splice_component->splice_time;
+
+         vqarray_add(splice_event_new->components, splice_component_new);
+      }
+   }
+
+   return splice_event_new;
 }
 
